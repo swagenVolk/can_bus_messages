@@ -1,15 +1,14 @@
 /**************************************************************
  * GLOBAL
  * TODO: 
- * Generate CAN message with field names aligned underneath 
- * corresponding bit values - padded with spaces, or use colors?
- *  Not getting a newline
- *  Alignment is off
- *  Should I have separate string field values?
- * Do stuff bits get a color, or [x|y]?  Latter might be better
- * for visibility continuity
- * RTR|SRR
- * CRC
+ * Fill in stuff bits with [x|y] for visibility continuity
+ * Calculate CRC 
+ * Test extended
+ * Endianness
+ * Glossary of terms
+ * Compressed message with stuffed [xy] notation
+ * Compressed message with stuffed [01] notation
+ * Add bit banging test (with reasonable-ness checks)
 ***************************************************************/
 // From https://en.wikipedia.org/wiki/Endianness :
 // Many IETF RFCs use the term network order, meaning the order of transmission for bytes over the wire in network protocols. 
@@ -67,7 +66,7 @@ class canMsgFields  {
 
   constructor (msg_id, is_rtr, dlc, data) {
     // Start Of Frame is always DOMINANT (0)
-    this.SOF = 0b0;
+    this.SOF = 0;
     var max_11bit_id = Math.pow (2, BASE_MSG_FLD_LEN) - 1;
     if (msg_id <= max_11bit_id)
       // 0 (DOMINANT) indicates 11-bit message ID
@@ -86,17 +85,17 @@ class canMsgFields  {
       this.EXT_MSG_ID = (msg_id & EXT_MSG_MASK_LOWER);
     }
 
-    this.RTR = is_rtr ? 0b1 : 0b0;
+    this.RTR = is_rtr ? 1 : 0;
     // Must be recessive (1) 
-    this.SRR = 0b1;
+    this.SRR = 1;
 
     // Reserved bits which must be set dominant (0), but accepted as either dominant or recessive 
-    this.r0 = 0b0;
-    this.r1 = 0b0;
+    this.r0 = 0;
+    this.r1 = 0;
 
     if (this.RTR == 0b1)  {
       // NO DATA for a Remote Transmission Request (RTR)
-      this.DLC = 0b0000;
+      this.DLC = 0;
 
     } else {
       // TODO: DLC is a 4-bit field. So is it [big|little]-endian?
@@ -377,11 +376,10 @@ function get_err_for_data_field (data_length_code, data_array)  {
 function gen_can_msg_btn_pressed (event) {
   var accum_err_msg = "";
 
-  var generated_msg_txt_box = document.getElementById("gen_can_msg_txt_box");
-  if (generated_msg_txt_box != null)  {
-    generated_msg_txt_box.value = "";
+  var gen_can_msg_pre = document.getElementById("gen_can_msg_pre");
+  if (gen_can_msg_pre != null)  {
+    gen_can_msg_pre.innerText = "";
   }
-
 
   calculated_dlc = new passByRefNum (0);
   msg_id = new passByRefNum (0);
@@ -397,10 +395,9 @@ function gen_can_msg_btn_pressed (event) {
     can_msg_data = new canMsgFields (msg_id.val, get_rtr_checked(), calculated_dlc.val, data_array)
     make_can_msg_str (can_msg_data, msg_descr);
 
-    if (generated_msg_txt_box != null)  {
-      generated_msg_txt_box.value = msg_descr.data_str + "\n\n" + msg_descr.field_guide;
+    if (gen_can_msg_pre != null)  {
+      gen_can_msg_pre.innerText = msg_descr.data_str + "\n" + msg_descr.field_guide;
     }
-
   }
 }
 
