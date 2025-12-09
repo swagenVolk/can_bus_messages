@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+	<title></title>
+	<meta name="generator" content="LibreOffice 24.2.7.2 (Linux)"/>
+	<meta name="created" content="2025-12-06T15:30:53.649501898"/>
+	<meta name="changed" content="2025-12-07T20:47:44.026755976"/>
+	<style type="text/css">
+		@page { size: 8.5in 11in; margin-left: 0.79in; margin-right: 0.39in; margin-top: 0.39in; margin-bottom: 0.39in }
+		p { line-height: 115%; margin-bottom: 0.1in; background: transparent; background: transparent }
+		h2 { margin-top: 0.14in; margin-bottom: 0.08in; background: transparent; background: transparent; page-break-after: avoid }
+		h2.western { font-family: "Liberation Serif", serif; font-size: 18pt; font-weight: bold }
+		h2.cjk { font-family: "Noto Serif CJK SC"; font-size: 18pt; font-weight: bold }
+		h2.ctl { font-family: "Noto Sans Devanagari"; font-size: 18pt; font-weight: bold }
+		td p { orphans: 0; widows: 0; background: transparent; background: transparent }
+		a:link { color: #000080; text-decoration: underline }
+		a:visited { color: #800000; text-decoration: underline }
+	</style>
+</head>
+<body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h2 class="western">
+Create CAN 2.0[A|B] message</h2>
+<form name="data0_txt_box" action="../can_msg">
+	<table width="888" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
+		<col width="246"/>
+		<col width="642"/>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0in"><p>Input Unique
+				Message ID [0...0x1FFFFFFF]</p>
+			</td>
+			<td width="642" style="border: none; padding: 0in"><p><a name="can_msg_id"></a><a name="msg_id_txt_box"></a>
+				<input type="text" id="msg_id_txt_box" name="msg_id_txt_box"  size="38" style="width: 3.19in; height: 0.2in"></input></p>
+			</td>
+		</tr>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0in"><p>Remote
+				Transition Request?</p>
+			</td>
+			<td width="642" style="border: none; padding: 0in"><p><input type="checkbox" id="is_rtr_chk_box" name="is_rtr_chk_box" value=""  style="width: 0.22in; height: 0.16in"></input></p>
+			</td>
+		</tr>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0in"><p>Data Bytes [0..0xFF] Fill R2L</p><input id="clear_data_btn" type="button" name="clear_data_btn" value="Zero Data Bytes"  style="width: 1.2in; height: 0.28in"></input>
+			</td>
+			<td width="642" style="border: none; padding: 0in">
+        <p>
+				<textarea id="data7_txt_box" name="data7_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data6_txt_box" name="data6_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data5_txt_box" name="data5_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data4_txt_box" name="data4_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data3_txt_box" name="data3_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data2_txt_box" name="data2_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data1_txt_box" name="data1_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data0_txt_box" name="data0_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        </p>
+			</td>
+		</tr>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0in"><p><a name="gen_can_msg_btn"></a>
+				<input type="button" id="gen_can_msg_btn" name="gen_can_msg_btn" value="Generate CAN Message"  style="width: 1.69in; height: 0.26in"></input></p>
+			</td>
+			<td width="642" style="border: none; padding: 0in"><p><input type="textarea" id="gen_can_msg_txt_box" name="gen_can_msg_txt_box"  size="59" style="width: 4.94in; height: 0.5in" rows="2" readonly></input></p>
+			</td>
+		</tr>
+	</table>
+</form>
+<p><br/>
+<br/>
+
+</p>
+<p><br/>
+<br/>
+
+</p>
+<p><br/>
+<br/>
+
+</p>
+<script src="./can_msg.js"></script>
+</body>
+</html>
