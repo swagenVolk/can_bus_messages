@@ -1,32 +1,171 @@
 /**************************************************************
  * GLOBAL
  * TODO: 
- * Fill in stuff bits with [x|y] for visibility continuity
- * Calculate CRC 
+ * Calculate CRC - Is it being done correctly?  What about additional 0s added at end?
+ *  Last bit is the CRC delimiter, which must be recessive (0)
+ *  Need to bit stuff the CRC with the execption of the delimiter
+ * 
+ * Endian-ness - do different fields have different endian-ness?
+ * From https://en.wikipedia.org/wiki/Endianness :
+ * Many IETF RFCs use the term network order, meaning the order of transmission for bytes over the wire in network protocols. 
+ * Among others, the historic RFC 1700 defines the network order for protocols in the Internet protocol suite to be big-endian.
+ * However, not all protocols use big-endian byte order as the network order. The Server Message Block (SMB) protocol uses 
+ * little-endian byte order. In CANopen, multi-byte parameters are always sent least significant byte first (little-endian). 
+ * The same is true for Ethernet Powerlink.
+ * 
+ * [DLC|DATA|CRC] - These fields *might* have the ability for [big|little] endian-ness
+ * DLC - *NOT* multi-byte, *AND* it's important that there's no confusion WRT the value,
+ * because it's a publicly visible value that should not be ambiguous.
+ * Assume DLC is big-endian
+ * 
+ * DATA - Could be either [big|little] endian
+ * 
+ * CRC - *IS* multi-byte, *AND* it's important that there's no confusion WRT the value,
+ * because it's a publicly visible value that should not be ambiguous.
+ * Also, it seems like calculating the CRC would be easier to do bit by bit under big-endian network order
+ * Assume CRC is big-endian
+ * 
  * Test extended
- * Endianness
- * Glossary of terms
- * Compressed message with stuffed [xy] notation
- * Compressed message with stuffed [01] notation
  * Add bit banging test (with reasonable-ness checks)
 ***************************************************************/
-// From https://en.wikipedia.org/wiki/Endianness :
-// Many IETF RFCs use the term network order, meaning the order of transmission for bytes over the wire in network protocols. 
-// Among others, the historic RFC 1700 defines the network order for protocols in the Internet protocol suite to be big-endian.
-// However, not all protocols use big-endian byte order as the network order. The Server Message Block (SMB) protocol uses 
-// little-endian byte order. In CANopen, multi-byte parameters are always sent least significant byte first (little-endian). 
-// The same is true for Ethernet Powerlink.
-// TODO: DLC? CRC?
 var is_data_index_order_big_endian = true;
 var is_data_in_bytes_big_endian = true;
 
 var BASE_MSG_FLD_LEN = 11;
 var EXT_MSG_FLD_LEN = 18;
-var BASE_MSG_MASK = 0b11111111111;
-var EXT_MSG_MASK_UPPER = 0b11111111111000000000000000000; 
-var EXT_MSG_MASK_LOWER = 0b111111111111111111;
+var EXT_MSG_MASK_U11 = 0x1FFC0000;   // 0b1 1111 1111 1100 0000 0000 0000 0000; 
+var EXT_MSG_MASK_L18 = 0x3FFFF;      // 0b0 0000 0000 0011 1111 1111 1111 1111;
+
 var STUFF_TRIGGER_CNT = 5;
 
+var CRC_POLYNOMIAL = 0x4599;
+
+/**************************************************************
+ * Hold 2 numbers in 1 object
+ * TODO: Does something like a pair() class already exist?
+ * Seems like it should; feels like re-inventing the wheel here
+***************************************************************/
+class numPair {
+  left;
+  right;
+
+  constructor (left, right) {
+    this.left = left;
+    this.right = right;
+  }
+}
+
+
+/**************************************************************
+ * Hold information needed for bit-by-bit CRC calculation
+***************************************************************/
+class crcHolder {
+  curr_reg_window;
+  num_data_bits;
+  polynomial;
+  computed_crc;
+  poly_bit_size;
+
+  constructor (polynomial)  {
+    this.curr_reg_window = 0;
+    this.num_data_bits = 0;
+    this.polynomial = polynomial;
+    this.computed_crc = 0;
+    this.poly_bit_size = 0;
+
+    // Infer the polynomial's size by finding the maximum set bit
+    var num_loops = 0;
+    for (var mask64 = 0xFFFFFFFFFFFFFFFF; mask64 > 0x0; mask64 >>>= 1) {
+      if (mask64 & polynomial)
+        break;
+      else  {
+        num_loops++;
+      }
+    }
+
+    this.poly_bit_size = 64 - num_loops + 1;
+  }
+
+  /**************************************************************
+   * Account for the next bit from the frame in our ongoing CRC
+   * calculation
+  ***************************************************************/
+  next_bit_crc_calc (next_bit) {
+
+    this.curr_reg_window <<= 1;
+    this.curr_reg_window |= (next_bit & 0x1);
+    this.num_data_bits++;
+
+    if (this.num_data_bits >= this.poly_bit_size) {
+      // TODO: Do I have to wait until I've gathered 15 or 16 bits before starting the calculations?
+      var is_xor_with_polyg = this.curr_reg_window ^ this.computed_crc;
+
+      this.computed_crc <<= 1;
+
+      if (is_xor_with_polyg)
+        this.computed_crc ^= this.polynomial;
+    }
+  }
+
+  /**************************************************************
+   * Account for bit(s) from a given field
+   * TODO: Is there a way to add a function with > 1 parameter to
+   * a js class?
+  ***************************************************************/
+  add_bits_to_crc (num_pair) {
+
+    var fld_data = num_pair.left; 
+    var num_bits_in_fld = num_pair.right;
+    var mask = 0x1;
+
+    if (num_bits_in_fld > 0)  {
+      mask = 0x1 << (num_bits_in_fld - 1);
+      for (; mask > 0; mask >>>= 1) {
+        this.next_bit_crc_calc ((mask & fld_data) ? 1 : 0);
+      }
+    }
+  }
+
+  /**************************************************************
+   * TODO: Using as Getter, but not preceding with [get]
+   * FIX?
+  ***************************************************************/
+  get_computed_crc_final()  {
+    var idx;
+    var final_mask = 0x1;
+
+    for (idx = 0; idx < this.poly_bit_size; idx++)  {
+      // Pad with additional [0]{poly_bit_size} bits and returned computed CRC
+      // TODO: Some specify doing this; others don't
+      this.next_bit_crc_calc (0);
+      final_mask <<= 1;
+      final_mask |= 0x1;
+    }
+
+    // Make sure our final computed CRC is limited by polynomial size + 1
+    this.computed_crc = this.computed_crc & final_mask;
+    // Last bit of the CRC field is the delimiter, and it must be recessive (1)
+    this.computed_crc |= 0x1;
+
+    return this.computed_crc;
+  }
+
+  /**************************************************************
+   * 
+  ***************************************************************/
+  get_poly_bit_size () {
+    return this.poly_bit_size;
+
+  }
+}
+
+
+/**************************************************************
+ * Class to hold formatted CAN bus data field info with visual
+ * spaces between nibbles|bytes and fields
+ * Field names are shown below with alignment to the corresponding
+ * data
+***************************************************************/
 class presentationStr {
   data_str;
   field_guide;
@@ -38,9 +177,11 @@ class presentationStr {
 
 }
 
+/**************************************************************
+ * Hacky class object to allow for passing by reference
+ * TODO: I'm sure there's a better way to do this
+***************************************************************/
 class passByRefNum  {
-  // Hacky class object to allow for passing by reference
-  // TODO: I'm sure there's a better way to do this
   val;
 
   constructor (num_val) {
@@ -48,6 +189,9 @@ class passByRefNum  {
   }
 }
 
+/**************************************************************
+ * Holds data for CAN 2.0[A|B] message fields
+***************************************************************/
 class canMsgFields  {
   SOF;
   MSG_ID;
@@ -64,34 +208,65 @@ class canMsgFields  {
   EOF;
   IFS;
 
+  crcMachine;
+
   constructor (msg_id, is_rtr, dlc, data) {
+    this.crcMachine = new crcHolder(CRC_POLYNOMIAL);
+    // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+    // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+    
     // Start Of Frame is always DOMINANT (0)
     this.SOF = 0;
+    this.crcMachine.add_bits_to_crc (new numPair (this.SOF, 1));
+
     var max_11bit_id = Math.pow (2, BASE_MSG_FLD_LEN) - 1;
-    if (msg_id <= max_11bit_id)
+    
+    if (msg_id <= max_11bit_id) {
       // 0 (DOMINANT) indicates 11-bit message ID
       this.IDE = 0;
-    else
-      // 1 (recessive) indicates extended format 29-bit message ID
-      this.IDE = 1; 
-
-    // Message ID *MUST* be in big-endian, network order for address conflict resolution to work
-    if (this.IDE == 0) {
+      // Message ID *MUST* be in big-endian, network order for address conflict resolution to work
       this.MSG_ID = msg_id;
       this.EXT_MSG_ID = 0;
-    
+
     } else  {
-      this.MSG_ID = (msg_id & EXT_MSG_MASK_UPPER) >> EXT_MSG_FLD_LEN;
-      this.EXT_MSG_ID = (msg_id & EXT_MSG_MASK_LOWER);
+      // 1 (recessive) indicates extended format 29-bit message ID
+      this.IDE = 1; 
+      // mmmmmmmmmmmxxxxxxxxxxxxxxxxxx
+      this.MSG_ID = (msg_id & EXT_MSG_MASK_U11) >> EXT_MSG_FLD_LEN;
+      this.EXT_MSG_ID = (msg_id & EXT_MSG_MASK_L18);
+
     }
+
+    this.crcMachine.add_bits_to_crc (new numPair (this.MSG_ID, 11));
 
     this.RTR = is_rtr ? 1 : 0;
     // Must be recessive (1) 
     this.SRR = 1;
 
+    if (this.IDE == 0)
+      // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      this.crcMachine.add_bits_to_crc (new numPair (this.RTR, 1));
+
+    else
+      // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      this.crcMachine.add_bits_to_crc (new numPair (this.SRR, 1));
+
+    this.crcMachine.add_bits_to_crc (new numPair (this.IDE, 1));
+
     // Reserved bits which must be set dominant (0), but accepted as either dominant or recessive 
     this.r0 = 0;
     this.r1 = 0;
+
+    if (this.IDE == 1)  {
+      // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      this.crcMachine.add_bits_to_crc (new numPair (this.EXT_MSG_ID, 18));
+      this.crcMachine.add_bits_to_crc (new numPair (this.RTR, 1));
+      this.crcMachine.add_bits_to_crc (new numPair (this.r1, 1));
+    }
+    
+    this.crcMachine.add_bits_to_crc (new numPair (this.r0, 1));
+
 
     if (this.RTR == 0b1)  {
       // NO DATA for a Remote Transmission Request (RTR)
@@ -101,15 +276,22 @@ class canMsgFields  {
       // TODO: DLC is a 4-bit field. So is it [big|little]-endian?
       this.DLC = dlc;
 
+    }
+
+    this.crcMachine.add_bits_to_crc (new numPair (this.DLC, 4));
+
+    if (this.DLC > 0) {
       this.DATA = new Uint8Array(dlc);
 
       for (var idx = 0; idx < dlc; idx++) {
         this.DATA[idx] = data[idx];
+        // TODO: Endian-ness of DATA?
+        this.crcMachine.add_bits_to_crc (new numPair (data[idx], 8));
       }
     }
 
-    // TODO: How is this calculated?
-    this.CRC = 0b01010101;
+    // TODO: Questions remain on how this is calculated
+    this.CRC = this.crcMachine.get_computed_crc_final();
 
     // Transmitter sends recessive (1) and any receiver can assert a dominant (0)
     // Followed by ACK delimiter (recessive)
@@ -128,18 +310,16 @@ class canMsgFields  {
 ***************************************************************/
 function bit_stuff_string (fld_data, prev_bit, seq_bit_cnt, total_stuff_cnt)  {
   var stuffed_str = "";
-  return fld_data;
 
   for (var idx = 0; idx < fld_data.length; idx++) {
-    var curr_char = fld_data[idx];
+    var curr_bit = fld_data[idx];
 
-    if (curr_char == ' ')  {
-      stuffed_str += curr_char;
+    if (curr_bit == ' ')  {
+      stuffed_str += curr_bit;
     
-    } else if (curr_bit == 'a' || curr_bit == 'b')  {
-      var curr_bit = curr_char == 'a' ? 0 : 1;
+    } else if (curr_bit == '0' || curr_bit == '1')  {
+      stuffed_str += curr_bit;
       var other_bit = curr_bit == 0 ? 1 : 0;
-      stuffed_str += curr_char;
       
       if (prev_bit.val == curr_bit) {
         seq_bit_cnt[curr_bit] += 1;
@@ -228,7 +408,6 @@ function make_can_msg_str (can_msg_data, msg_descr) {
   append_presentation_strings (msg_descr, "SOF", "0", 1);
 
   // MSG_ID
-  // TODO: Add byte|nibble blanks
   var tmp_str = "";
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.MSG_ID, 4, 11), prev_bit, seq_bit_cnt, total_stuff_cnt);
   append_presentation_strings (msg_descr, "ID", tmp_str, 11);
@@ -326,9 +505,15 @@ function num_in_range (field_name, num_str, min, max, callers_num) {
  * the CAN message ID the user entered.
 ***************************************************************/
 function get_err_for_can_msg_field (msg_id_val)  {
+  var err_msg = "";
   var users_msg_id = document.getElementById("msg_id_txt_box").value;
-  return num_in_range ("Message ID", users_msg_id, 0, 0x1FFFFFFF, msg_id_val);
 
+  if (users_msg_id.replaceAll (" ", "") == "")
+    err_msg = "Please put a numeric value in the Message ID field.";
+  else
+    err_msg =  num_in_range ("Message ID", users_msg_id, 0, 0x1FFFFFFF, msg_id_val);
+
+  return err_msg;
 }
 
 /**************************************************************
@@ -370,6 +555,52 @@ function get_err_for_data_field (data_length_code, data_array)  {
 }
 
 /**************************************************************
+ * Generate a glossary of the CAN bus messge fields for the user 
+ * and discern which field names are appropriate for either
+ * standard or extended messages
+***************************************************************/
+function make_field_glossary (is_extended)  {
+  var glossary_descr = "";
+
+  // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+  // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+
+  glossary_descr += "\nSOF:    Start Of Frame. A DOMINANT logical 0 is driven on an idle bus. Rest of frame follows.";
+  glossary_descr += "\nID:     11-bit message ID. Lower IDs have higher priorities.";
+
+  var rtr_desc = "\nRTR:    Remote Transmission Request. DOMINANT (0) for data frame; recessive (1) for remote request.";
+  if (!is_extended)
+    glossary_descr += rtr_desc;
+  else
+    glossary_descr += "\nSRR:    Must be recessive (1) for extended messages.";
+
+  glossary_descr += "\nIDE:    DOMINANT (0) for 11-bit ID message identifiers; recessive (1) for extended 29-bit message identifiers.";
+
+  if (is_extended)  {
+    glossary_descr += "\nEXT_ID: Additional 18 bits for rest of 29-bit extended message identifier.";
+    glossary_descr += rtr_desc;
+    glossary_descr += "\nr1:     RESERVED";
+  }
+
+  glossary_descr += "\nr0:     RESERVED";
+  glossary_descr += "\nDLC:    Data Length Code indicates length of DATA field ([0-8] bytes).";
+  glossary_descr += "\nDATA:   [0-8] bytes of data.  Remote requests send no data, but their response probably will.";
+  glossary_descr += "\nCRC:    15-bit Cyclic Redundancy Check followed by 1-bit delimiter for detecting transmission errors.";
+  glossary_descr += "\nACK:    Acknowledgment; receiver indicates error detection via DOMINANT (0) on 1st of 2 ACK bits.";
+  glossary_descr += "\nEOF:    End Of Frame; 7 recessive (1) bits in a row.";
+  glossary_descr += "\nIFS:    Inter Frame Space; 3 recessive (1) bits in a row.";
+
+  glossary_descr += "\n\nStuff bits are used to maintain synchronization since there is no clock signal on the CAN bus.";
+  glossary_descr += "\nA bit of opposite polarity is inserted after five consecutive bits of the same polarity."
+  glossary_descr += "\nIf a transmitter sends 5 [0]s in a row, it must send a [1] stuff bit (de-stuffed by receiver).";
+  glossary_descr += "\nIf a transmitter sends 5 [1]s in a row, it must send a [0] stuff bit (de-stuffed by receiver).";
+  glossary_descr += "\nBit stuffing is active from SOF through the calculated CRC and off from the CRC delimiter onwards.";
+
+
+  return glossary_descr;
+}
+
+/**************************************************************
  * Validate user's input into fields for generating a CAN bus
  * message.
 ***************************************************************/
@@ -379,6 +610,11 @@ function gen_can_msg_btn_pressed (event) {
   var gen_can_msg_pre = document.getElementById("gen_can_msg_pre");
   if (gen_can_msg_pre != null)  {
     gen_can_msg_pre.innerText = "";
+  }
+
+  var glossary_pre = document.getElementById ("glossary_pre");
+  if (glossary_pre != null) {
+    glossary_pre.innerText = "";
   }
 
   calculated_dlc = new passByRefNum (0);
@@ -396,7 +632,20 @@ function gen_can_msg_btn_pressed (event) {
     make_can_msg_str (can_msg_data, msg_descr);
 
     if (gen_can_msg_pre != null)  {
-      gen_can_msg_pre.innerText = msg_descr.data_str + "\n" + msg_descr.field_guide;
+      gen_can_msg_pre.innerText = msg_descr.data_str + "\n" + msg_descr.field_guide + "\n\n";
+
+      gen_can_msg_pre.innerText += "Raw [x|y] stuff bits: ";
+      var compressed_can_xy = msg_descr.data_str.replaceAll (" ", "");
+      gen_can_msg_pre.innerText += compressed_can_xy;
+      gen_can_msg_pre.innerText += "\n";
+
+      gen_can_msg_pre.innerText += "Raw [0|1] stuff bits: ";
+      var compressed_can_01 = compressed_can_xy.replaceAll ("x", "0");
+      compressed_can_01 = compressed_can_01.replaceAll ("y", "1");
+      gen_can_msg_pre.innerText += compressed_can_01 +"\n\n";
+
+      if (glossary_pre != null)
+        glossary_pre.innerText += make_field_glossary (can_msg_data.IDE == 1)
     }
   }
 }
