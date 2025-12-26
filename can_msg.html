@@ -25,8 +25,7 @@ Create CAN 2.0[A|B] message</h2>
 		<col width="246"/>
 		<col width="100%"/>
 		<tr valign="top">
-			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p align="left">Input Unique
-				Message ID [0...0x1FFFFFFF]</p>
+			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p align="left">Message ID [0-536870911] (Max 29 bits)</p>
 			</td>
 			<td width="300" style="border: none; padding: 0 5px 5px 5px"><p align="left"><a id="can_msg_id" name="can_msg_id"></a><a name="msg_id_txt_box"></a>
 				<input type="text" id="msg_id_txt_box" name="msg_id_txt_box"  size="38" style="width: 3.19in; height: 0.2in"></input></p>
@@ -42,7 +41,7 @@ Create CAN 2.0[A|B] message</h2>
 		</tr>
 		<tr valign="top">
 			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p style="margin-bottom: 0.2in">
-				Data Bytes [0..0xFF] Fill right to left</p>
+				Data Bytes [0-255] Fill right to left</p>
 				<p align="left"><a name="clear_data_btn"></a><input type="button" id="clear_data_btn" name="clear_data_btn" value="Zero Data Bytes"  style="width: 1.2in; height: 0.28in"></input>
 								</p>
 			</td>
@@ -68,6 +67,7 @@ Create CAN 2.0[A|B] message</h2>
   <p align="left"><input type="button" id="decode_can_msg_stream_btn" name="decode_can_msg_stream_btn" value="Decode CAN Messages"  style="width: 1.69in; height: 0.26in"></input>
   <p align="left"><label for="decoded_can_msgs_lbl">Decoded CAN bus messages below</label></p>
   <p align="left"><textarea id="decoded_stream_txt_box" name="decoded_stream_txt_box"  rows="20" cols="100" wrap="soft" style="width: 98%; height: 150px"></textarea></p>
+  <p align="left"><input type="button" id="gen_rand_stream_btn" name="gen_rand_stream_btn" value="Generate test stream"  style="width: 1.69in; height: 0.26in"></input>
 </form>
 <p align="left"><br/>
 <br/>

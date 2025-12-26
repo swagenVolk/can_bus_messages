@@ -8,10 +8,15 @@
  *  Last bit is the CRC delimiter, which must be recessive (0)
  *  Need to bit stuff the CRC with the execption of the delimiter
  *  Display 15-bit CRC.  Break delimiter out?
- * Handle error conditions
- *  Fail but continue eating message
- *  Hard fail; look for 10 floats in a row
+ * Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+ * Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+ * 
  * Test extended
+ * Test heavy stream
+ * Test negatives
+ * Label fields for each parsed message
+ * More user friendly explanation up front
+ * 
  *
  * Split out user message creation to a separate file from consuming message stream? 
  * Endian-ness - do different fields have different endian-ness?
@@ -71,6 +76,18 @@ class numPair {
     this.left = left;
     this.right = right;
   }
+}
+
+/**************************************************************
+ * Copied from 
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/random#examples
+ * 
+***************************************************************/
+function getRandomIntInclusive(min, max) {
+  const minCeiled = Math.ceil(min);
+  const maxFloored = Math.floor(max);
+  // The maximum is inclusive and the minimum is inclusive
+  return Math.floor(Math.random() * (maxFloored - minCeiled + 1) + minCeiled); 
 }
 
 /**************************************************************
@@ -172,7 +189,6 @@ class crcHolder {
   ***************************************************************/
   get_poly_bit_size () {
     return this.poly_bit_size;
-
   }
 }
 
@@ -187,9 +203,13 @@ class presentationStr {
   data_str;
   field_guide;
 
-  constructor() {
+  reset() {
     this.data_str =    "";
     this.field_guide = "";
+  }
+
+  constructor() {
+    this.reset();
   }
 }
 
@@ -227,8 +247,15 @@ var GET_CRC = 9;
 var GET_ACK = 10;
 var GET_EOF = 11;
 var GET_IFS = 12;
-var MSG_FAILED = 13;
-var MSG_END_OK = 14;
+var MSG_HARD_FAIL = 13;
+var MSG_ENDED = 14;
+
+// Values for usr_msg_status
+var SUCCESS = 0;
+var INFLIGHT = 1;
+var SOFT_ERROR = 2;
+var FATAL_ERROR = 3;
+var INTERNAL_FAIL = 4;
 
 class canMsgParseState {
   can_msg_stream;
@@ -236,20 +263,20 @@ class canMsgParseState {
   curr_msg_number;
 
   usr_msg_raw;
-  usr_msg_01_stuffed;
   usr_msg_xy_stuffed;
+  usr_msg_status;
 
-  curr_msg_state;
+  parsing_state;
   curr_hdr_bit_val;
   prev_hdr_bit_val;
   num_consecutive;
   num_stuffed;
-  is_failed;
   failure_msg;
   msg_id;
-  msg_id_bit_cnt;
+  num_msg_id_bits;
   extended_msg_id;
-  extended_msg_id_bit_cnt;
+  absolute_msg_id;
+  num_ext_msg_id_bits;
   is_rtr;
   is_extended;
   r0_val;
@@ -257,17 +284,15 @@ class canMsgParseState {
   data_length_code;
   num_dlc_bits;
   data;
-  num_data_bytes_expected;
-  num_data_bytes_actual;
+  num_data_bits_expected;
+  num_data_bits_actual;
   senders_crc;
   calculated_crc;
   num_crc_bits;
-  is_ack_valid;
   num_ack_bits;
-  is_eof_valid;
   num_eof_bits;
-  is_ifs_valid;
   num_ifs_bits;
+  post_hard_fail_seq_1s_cnt;
   is_stuffing_on;
   line_num;
   column;
@@ -277,7 +302,8 @@ class canMsgParseState {
   parserCrc;
 
   reset_for_single_msg ()  {
-    this.curr_msg_state = GET_SOF;
+    this.usr_msg_status = INFLIGHT;
+    this.parsing_state = GET_SOF;
     this.SOF_start_line = 0;
     this.SOF_start_col = 0;
     
@@ -286,14 +312,14 @@ class canMsgParseState {
     this.prev_hdr_bit_val = 0;
     this.num_consecutive = [0,0];
     this.num_stuffed = [0,0];
-    this.is_failed = false;
     this.failure_msg = "";
     this.msg_id = 0;
-    this.msg_id_bit_cnt = 0;
+    this.num_msg_id_bits = 0;
     this.extended_msg_id = 0;
-    this.extended_msg_id_bit_cnt = 0;
-    this.is_rtr = false;
-    this.is_extended = false;
+    this.absolute_msg_id = 0;
+    this.num_ext_msg_id_bits = 0;
+    this.is_rtr = 0;
+    this.is_extended = 0;
     this.r0_val = 0;
     this.r1_val = 0;
     this.data_length_code = 0;
@@ -301,18 +327,15 @@ class canMsgParseState {
     this.data = [0,0,0,0,0,0,0,0];
     this.senders_crc = 0;
     this.calculated_crc = 0;
-    this.is_ack_valid = true;
-    this.num_data_bytes_expected = 0;
-    this.num_data_bytes_actual = 0;
+    this.num_data_bits_expected = 0;
+    this.num_data_bits_actual = 0;
     this.num_crc_bits = 0;
     this.num_ack_bits = 0;
-    this.is_eof_valid = true;
     this.num_eof_bits = 0;
-    this.is_ifs_valid = true;
     this.num_ifs_bits = 0;
+    this.post_hard_fail_seq_1s_cnt = 0;
     this.is_stuffing_on = true;
     this.usr_msg_raw = "";
-    this.usr_msg_01_stuffed = "";
     this.usr_msg_xy_stuffed = "";
     this.parserCrc = new crcHolder(CRC_POLYNOMIAL);
   
@@ -331,9 +354,26 @@ class canMsgParseState {
   /* ***************************************************************************
   * Utility fxn to mark bit position of failure in the header
   * *************************************************************************** */
-  mark_failure (error_msg)  {
-    this.is_failed = true;
-    this.failure_msg = error_msg;
+  mark_failure (error_msg, failure_severity)  {
+
+    if (this.failure_msg.length > 0)
+      this.failure_msg += "\n";
+    
+    this.failure_msg += error_msg + " (line " + this.line_num + ":" + this.column + "); parsing_state = " + this.parsing_state;
+
+    if (failure_severity == FATAL_ERROR)  {
+      this.usr_msg_status = failure_severity;
+      this.parsing_state = MSG_HARD_FAIL;
+      this.is_stuffing_on = false;
+      this.post_hard_fail_seq_1s_cnt = 0;
+    
+    } else if (failure_severity == SOFT_ERROR) {
+      // TODO: Need to mark where soft failure occurred for user
+      this.usr_msg_status = failure_severity;
+
+    } else  {
+      this.usr_msg_status = INTERNAL_FAIL;
+    }
   }
 
   /* ***************************************************************************
@@ -344,23 +384,48 @@ class canMsgParseState {
 
     info_str += "\nCAN Message #" + this.curr_msg_number;
     info_str += "\nSOF starts at line:column " + this.SOF_start_line + ":" + this.SOF_start_col;
-    info_str += "\nRaw CAN msg =    " + this.usr_msg_raw;
-    info_str += "\nMsg XY stuffed = " + this.usr_msg_xy_stuffed;
-    info_str += "\nMsg 01 stuffed = " + this.usr_msg_01_stuffed;
+    info_str += "\nCAN msg: Raw, XY stuffed";
+    info_str += "\n" + this.usr_msg_raw;
+    info_str += "\n" + this.usr_msg_xy_stuffed;
+    info_str += "\n";
 
-    if (this.is_failed) {
-      info_str += "\nLine:column = " + this.line_num + ":" + this.column;
+    if (this.usr_msg_status != SUCCESS) {
       info_str += "\nFailure message = " + this.failure_msg;
-      info_str += "\ncurr_msg_state = " + this.curr_msg_state;
       info_str += "\ncurr_hdr_bit_val = " + this.curr_hdr_bit_val;
       info_str += "\nprev_hdr_bit_val = " + this.prev_hdr_bit_val;
       info_str += "\nconsecutive 0 count = " + this.num_consecutive[0];
       info_str += "\nconsecutive 1 count = " + this.num_consecutive[1];
+
+    } else  {
+      // Using parsed data, create a user consumable representation of the CAN bus message
+      var msg_descr = new presentationStr();
+      var can_msg_data = new generatedCanMsg (this.absolute_msg_id, this.RTR, this.data_length_code, this.data);
+      make_can_msg_str (can_msg_data, msg_descr);
+
+      // Do a round trip check....do the collected and generated representations match?
+      var generated_bit_str = msg_descr.data_str.replaceAll(" ", ""); //.replaceAll("x", "0").replaceAll("y", "1");
+      // generated_bit_str = generated_bit_str.replaceAll("X", "0").replaceAll("Y", "1");
+
+      var collected_bit_str = this.usr_msg_xy_stuffed; //.replaceAll(" ", "").replaceAll("x", "0").replaceAll("y", "1");
+      // collected_bit_str = collected_bit_str.replaceAll("X", "0").replaceAll("Y", "1");
+
+      if (generated_bit_str != collected_bit_str) {
+        info_str += "\nINTERNAL FAILURE: Mismatch between collected CAN message and user friendly generated message!";
+        info_str += "\nCollected: " + collected_bit_str;
+        info_str += "\nGenerated: " + generated_bit_str;
+
+      } else  {
+        info_str += "\n" + msg_descr.data_str;
+        info_str += "\n" + msg_descr.field_guide;
+        info_str += "\n\n";
+      }
     }
+
     info_str += "\nmsg_id = " + make_hex_and_decimal(this.msg_id);
     info_str += "\nextended_msg_id = " + make_hex_and_decimal (this.extended_msg_id);
-    info_str += "\nis_rtr = " + this.is_rtr;
-    info_str += "\nis_extended = " + this.is_extended;
+    info_str += "\nabsolute_msg_id = " + make_hex_and_decimal (this.absolute_msg_id);
+    info_str += "\nis_rtr = " + this.is_rtr + " (" + (this.is_rtr == 0 ? "false" : "true") + ")";
+    info_str += "\nis_extended = " + this.is_extended + " (" + (this.is_extended == 0 ? "false" : "true") + ")";
     info_str += "\nr0_val = " + this.r0_val;
     info_str += "\nr1_val = " + this.r1_val;
     info_str += "\ndata_length_code = " + make_hex_and_decimal(this.data_length_code);
@@ -373,14 +438,11 @@ class canMsgParseState {
 
     info_str += "\nsenders_crc = " + make_hex_and_decimal (this.senders_crc);
 
-    if (this.is_failed) {
-      info_str += "\nis_ack_valid = " + this.is_ack_valid;
-      info_str += "\nnum_data_bytes_expected = " + this.num_data_bytes_expected;
-      info_str += "\nnum_data_bytes_actual = " + this.num_data_bytes_actual;
+    if (this.usr_msg_status != SUCCESS) {
+      info_str += "\nnum_data_bits_expected = " + this.num_data_bits_expected;
+      info_str += "\nnum_data_bits_actual = " + this.num_data_bits_actual;
       info_str += "\nnum_crc_bits = " + this.num_crc_bits;
-      info_str += "\nis_eof_valid = " + this.is_eof_valid;
       info_str += "\nnum_eof_bits = " + this.num_eof_bits;
-      info_str += "\nis_ifs_valid = " + this.is_ifs_valid;
       info_str += "\nnum_ifs_bits = " + this.num_ifs_bits;
       info_str += "\nis_stuffing_on = " + this.is_stuffing_on;
       info_str += "\nnum stuffed 0s = " + this.num_stuffed[0];
@@ -403,66 +465,75 @@ class canMsgParseState {
       // TODO: This isn't working
       // if (this.curr_msg_state < GET_CRC)
       //   this.crcMachine.add_bits_to_crc (new numPair (curr_bit, 1));
+      this.usr_msg_xy_stuffed += curr_bit;
 
-      if (this.curr_msg_state == GET_SOF)  {
+      if (this.parsing_state == GET_SOF)  {
         if (curr_bit == 0)  {
           this.SOF = 0;
-          this.curr_msg_state = GET_MSG_ID;
+          this.parsing_state = GET_MSG_ID;
           this.SOF_start_line = this.line_num;
           this.SOF_start_col = this.column;
           this.parserCrc.add_bits_to_crc (new numPair (this.SOF, 1));
         }
 
-      } else if (this.curr_msg_state == GET_MSG_ID)  {
+      } else if (this.parsing_state == GET_MSG_ID)  {
         this.msg_id <<= 1;
         this.msg_id |= this.curr_hdr_bit_val;
-        this.msg_id_bit_cnt++;
-        if (this.msg_id_bit_cnt == ID_FLD_LEN)  {
+        this.num_msg_id_bits++;
+        if (this.num_msg_id_bits == ID_FLD_LEN)  {
           this.parserCrc.add_bits_to_crc (new numPair (this.msg_id, ID_FLD_LEN));
-          this.curr_msg_state = GET_RTR;
+          this.parsing_state = GET_RTR;
+          this.absolute_msg_id = this.msg_id;
         }
       
-      } else if (this.curr_msg_state == GET_RTR) {
-        if (this.curr_hdr_bit_val == 0)
-            // RTR bit is DOMINANT
-            this.is_rtr = true;
-        else
-            this.is_rtr = false;
+      } else if (this.parsing_state == GET_RTR) {
+        // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+        // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+        this.is_rtr = this.curr_hdr_bit_val;
         this.parserCrc.add_bits_to_crc (new numPair (this.curr_hdr_bit_val /* RTR */, 1));
-        this.curr_msg_state = GET_R1;
+        if (this.is_extended)
+          this.parsing_state = GET_R1;
+        else
+          this.parsing_state = GET_IDE;
 
-      } else if (this.curr_msg_state == GET_IDE) {
-        if (this.curr_hdr_bit_val == 0)  {
-            // IDE bit is DOMINANT
-            this.is_extended = false;
-            this.curr_msg_state = GET_R0;
-        } else {
-            this.is_extended = true;
-            this.curr_msg_state = GET_XID;
-        }
+      } else if (this.parsing_state == GET_IDE) {
+        this.is_extended = this.curr_hdr_bit_val;
         this.parserCrc.add_bits_to_crc (new numPair (this.curr_hdr_bit_val /* IDE */, 1));
+        // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+        // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+        if (this.is_extended == 0)  
+          // IDE bit is DOMINANT
+          this.parsing_state = GET_R0;
+        else 
+          this.parsing_state = GET_XID;
+        
 
-      } else if (this.curr_msg_state == GET_XID) {
+      } else if (this.parsing_state == GET_XID) {
         this.extended_msg_id <<= 1;
         this.extended_msg_id |= this.curr_hdr_bit_val;
-        this.extended_msg_id_bit_cnt++;
-        if (this.extended_msg_id_bit_cnt == XID_FLD_LEN)  {
-          this.curr_msg_state = GET_RTR;
+        this.num_ext_msg_id_bits++;
+
+        // TODO:
+        // this.num_ext_msg_id_bits++;
+        // this.extended_msg_id |= (this.curr_hdr_bit_val << (XID_FLD_LEN - this.num_ext_msg_id_bits));
+
+        if (this.num_ext_msg_id_bits == XID_FLD_LEN)  {
+          this.parsing_state = GET_RTR;
+          this.SRR = this.RTR;
           this.parserCrc.add_bits_to_crc (new numPair (this.extended_msg_id, XID_FLD_LEN));
-
+          this.absolute_msg_id = (this.msg_id << XID_FLD_LEN) | this.extended_msg_id;
         }
-
-      } else if (this.curr_msg_state == GET_R0)  {
+      } else if (this.parsing_state == GET_R0)  {
         this.r0_val = this.curr_hdr_bit_val;
-        this.curr_msg_state = GET_DLC;
         this.parserCrc.add_bits_to_crc (new numPair (this.curr_hdr_bit_val /* RO */, 1));
+        this.parsing_state = GET_DLC;
 
-      } else if (this.curr_msg_state == GET_R1)  {
+      } else if (this.parsing_state == GET_R1)  {
         this.r1_val = this.curr_hdr_bit_val;
-        this.curr_msg_state = GET_R0;
         this.parserCrc.add_bits_to_crc (new numPair (this.curr_hdr_bit_val /* R1 */, 1));
+        this.parsing_state = GET_R0;
 
-      } else if (this.curr_msg_state == GET_DLC) {
+      } else if (this.parsing_state == GET_DLC) {
         this.num_dlc_bits++;
         this.data_length_code |= (this.curr_hdr_bit_val << (DLC_FLD_LEN - this.num_dlc_bits));
 
@@ -470,33 +541,39 @@ class canMsgParseState {
           // Done processing the Data Length Code field
           
           if (this.data_length_code > 0) {
-            if (this.data_length_code > 8)
+            if (this.data_length_code > 8)  {
               // There are 4 bits, so 9-15 can be represented, but our ceiling is still 8
               this.data_length_code = 8;
 
-            // TODO: How should the 9-15 values be handled regarding the CRC?
+              if (this.RTR) {
+                // This is a Remote Transfer Request (READ).  There should be NO data
+                this.mark_failure ("Expect DLC value of 0 for all RTR frames", SOFT_ERROR);
+              }
+            }
+
+            // TODO: Assuming the bits that represent [9-15] will be added to the CRC calculation "as is"
             this.parserCrc.add_bits_to_crc (new numPair (this.data_length_code, DLC_FLD_LEN));
-            this.curr_msg_state = GET_DATA;
-            this.num_data_bytes_expected = this.data_length_code * 8;
+            this.parsing_state = GET_DATA;
+            this.num_data_bits_expected = this.data_length_code * 8;
             
           } else {
-            this.curr_msg_state = GET_CRC;
+            this.parsing_state = GET_CRC;
           }
         }
 
-      } else if (this.curr_msg_state == GET_DATA)  {
-          var data_idx = Math.floor(this.num_data_bytes_actual/8);
+      } else if (this.parsing_state == GET_DATA)  {
+          var data_idx = Math.floor(this.num_data_bits_actual/8);
           var chunk = this.data[data_idx];
           chunk <<= 1;
           chunk |= this.curr_hdr_bit_val;
           this.data[data_idx] = chunk;
           this.parserCrc.add_bits_to_crc (new numPair (this.data[data_idx], 8));
-          this.num_data_bytes_actual += 1;
+          this.num_data_bits_actual += 1;
 
-          if (this.num_data_bytes_actual == this.num_data_bytes_expected)
-              this.curr_msg_state = GET_CRC;
+          if (this.num_data_bits_actual == this.num_data_bits_expected)
+              this.parsing_state = GET_CRC;
 
-      } else if (this.curr_msg_state == GET_CRC) {
+      } else if (this.parsing_state == GET_CRC) {
         this.num_crc_bits += 1;
         if (this.num_crc_bits == 1)
           // TODO: Questions remain on how this is calculated
@@ -508,58 +585,68 @@ class canMsgParseState {
         // Add bits in INCLUDING ending delimiter
         this.senders_crc |= this.curr_hdr_bit_val;
 
-        if (this.num_crc_bits == CRC_FLD_LEN) {
-          if (this.curr_hdr_bit_val != 1) {
-            this.mark_failure("FAILURE: Expected CRC delimiter to be RECESSIVE (1)!");
-          } else  {
-            this.curr_msg_state = GET_ACK;
-            if (this.senders_crc != this.calculated_crc)
-              this.mark_failure ("FAILURE: calculated CRC does NOT match sender's CRC! (" + make_hex_and_decimal (this.calculated_crc) + " <> " + make_hex_and_decimal (this.senders_crc) + ")");
-          }
-        } else if (this.num_crc_bits == (CRC_FLD_LEN - 1))  {
+        if (this.num_crc_bits == (CRC_FLD_LEN - 1))  {
           // The CRC Delimiter is up next and bit stuffing is turned off
           this.is_stuffing_on = false;
+        
+        } else if (this.num_crc_bits == CRC_FLD_LEN) {
+          if (this.curr_hdr_bit_val != 1) {
+            this.mark_failure("Expected CRC delimiter to be RECESSIVE (1)!", SOFT_ERROR);
+          } else  {
+            this.parsing_state = GET_ACK;
+            if (this.senders_crc != this.calculated_crc)
+              this.mark_failure ("Calculated CRC does NOT match sender's CRC! (" + make_hex_and_decimal (this.calculated_crc) + " <> " + make_hex_and_decimal (this.senders_crc) + ")", SOFT_ERROR);
+          }
         }
 
-      } else if (this.curr_msg_state == GET_ACK) {
+      } else if (this.parsing_state == GET_ACK) {
         this.num_ack_bits += 1;
         if (this.num_ack_bits == 1 && this.curr_hdr_bit_val != 1) {
-          // ACK must be RECESSIVE
-          this.is_ack_valid = false;
-          this.mark_failure("FAILURE: ACK must be RECESSIVE (1)!");
+          // In a bit-banging solution, now would be the time to drive ACKl to
+          // ground in the case of a CRC or other error that wasn't fatal
+          this.mark_failure("ACK must be RECESSIVE (1)!", SOFT_ERROR);
 
         } else if (this.num_ack_bits == ACK_FLD_LEN)  {
-          if (this.curr_hdr_bit_val != 1)  {
-            // ACK delimiter must be RECESSIVE
-            this.is_ack_valid = false;
-            this.mark_failure("FAILURE: ACK delimiter must be RECESSIVE (1)!");
-          } else {
-              // ACK delimiter must be RECESSIVE
-              this.is_ack_valid = true;
-          }
-          this.curr_msg_state = GET_EOF;
+          if (this.curr_hdr_bit_val != 1)  
+            this.mark_failure("ACK delimiter must be RECESSIVE (1)!", SOFT_ERROR);
+
+          this.parsing_state = GET_EOF;
         }
-      } else if (this.curr_msg_state == GET_EOF) {
+      } else if (this.parsing_state == GET_EOF) {
           if (this.curr_hdr_bit_val == 0)
-              this.is_eof_valid = false;
+            this.mark_failure ("Expected recessive (1) EOF bit [" + (EOF_FLD_LEN - this.num_eof_bits) + "] but got DOMINANT (0)", FATAL_ERROR);
           
           this.num_eof_bits += 1;
           
           if (this.num_eof_bits == EOF_FLD_LEN)
-              this.curr_msg_state = GET_IFS;
+              this.parsing_state = GET_IFS;
 
-      } else if (this.curr_msg_state == GET_IFS) {
+      } else if (this.parsing_state == GET_IFS) {
           if (this.curr_hdr_bit_val == 0)
-              this.is_ifs_valid = false;
+            this.mark_failure ("Expected recessive (1) IFS bit [" + (EOF_FLD_LEN - this.num_eof_bits) + "] but got DOMINANT (0)", FATAL_ERROR);
           
           this.num_ifs_bits += 1;
           
-          if (this.num_ifs_bits == IFS_FLD_LEN)
-              // TODO: Might need to add a "quiescent" state.....maybe
-              this.curr_msg_state = MSG_END_OK;
+          if (this.num_ifs_bits == IFS_FLD_LEN) {
+            this.parsing_state = MSG_ENDED;
+            if (this.usr_msg_status == INFLIGHT)
+              this.usr_msg_status = SUCCESS;
+          }
 
+      } else if (this.parsing_state == MSG_HARD_FAIL) {
+        // Encountered a HARD FAIL; this message has failed
+        // A bit-banging solution would ask for a retry somehow
+        if (this.curr_hdr_bit_val == 0)
+          this.post_hard_fail_seq_1s_cnt = 0;
+        else
+          this.post_hard_fail_seq_1s_cnt += 1;
+
+        if (this.post_hard_fail_seq_1s_cnt >= (EOF_FLD_LEN + IFS_FLD_LEN)) {
+          this.parsing_state = MSG_ENDED;
+        }
+        
       } else {
-        this.mark_failure("INTERNAL ERROR: Fell all the way through to No Man's Land!");
+        this.mark_failure("Fell all the way through to No Man's Land!", INTERNAL_FAIL);
       }
     }
 
@@ -576,48 +663,50 @@ class canMsgParseState {
         other_idx = 0;
       else
         other_idx = 1;
-      
-      if (this.curr_msg_state > GET_SOF && this.curr_msg_state < MSG_FAILED && this.curr_msg_state < MSG_END_OK) {
-        if (curr_bit_val != this.prev_hdr_bit_val) {
-          if (this.num_consecutive[other_idx] == STUFF_TRIGGER_CNT)  {
-            // This is a stuffed bit; let the caller know to toss it!
-            is_stuffed = true;
-            this.num_stuffed[curr_bit_val] += 1;
 
-            if (curr_bit_val == 0)  {
-              this.usr_msg_xy_stuffed += "x";
-              this.usr_msg_01_stuffed += "0";
+      if (this.parsing_state < MSG_HARD_FAIL && this.parsing_state < MSG_ENDED) {
+        if (this.parsing_state == GET_SOF)  {
+          // Account for the very 1st SOF bit, which should be DOMINANT (0)
+          this.num_consecutive[0] = 1;
+          this.num_consecutive[1] = 0;
 
-            } else if (curr_bit_val == 1) {
-              this.usr_msg_xy_stuffed += "y";
-              this.usr_msg_01_stuffed += "1";
+        } else  {
+          if (curr_bit_val != this.prev_hdr_bit_val) {
+            if (this.num_consecutive[other_idx] == STUFF_TRIGGER_CNT)  {
+              // This is a stuffed bit; let the caller know to toss it!
+              is_stuffed = true;
+              this.num_stuffed[curr_bit_val] += 1;
+
+              if (curr_bit_val == 0)  {
+                this.usr_msg_xy_stuffed += "x";
+
+              } else if (curr_bit_val == 1) {
+                this.usr_msg_xy_stuffed += "y";
+              
+              }  else {
+                this.usr_msg_xy_stuffed += "Z";
+              }
+
+              this.num_consecutive[other_idx] = 0;
+              this.num_consecutive[curr_bit_val] = 1;
             
-            }  else {
-              this.usr_msg_xy_stuffed += "Z";
-              this.usr_msg_01_stuffed += "?";
+            } else if (this.num_consecutive[other_idx] < STUFF_TRIGGER_CNT) {
+              // Polarity has flipped; reset our counters
+              this.num_consecutive[other_idx] = 0;
+              this.num_consecutive[curr_bit_val] = 1;
+            
+            } else  {
+              this.mark_failure("Too many sequential " + other_idx + "s!", FATAL_ERROR);
 
             }
 
-            this.num_consecutive[other_idx] = 0;
-            this.num_consecutive[curr_bit_val] = 1;
-          
-          } else  {
-            // Polarity has flipped; reset our counters
-            this.num_consecutive[other_idx] = 0;
-            this.num_consecutive[curr_bit_val] = 1;
+          } else if (curr_bit_val == this.prev_hdr_bit_val)  {
+            if (this.num_consecutive[curr_bit_val] == (STUFF_TRIGGER_CNT + 1))
+                this.mark_failure("Expected a bit stuffed " + other_idx, FATAL_ERROR);
+            else
+                this.num_consecutive[curr_bit_val] += 1;
           }
-      
-        } else if (curr_bit_val == this.prev_hdr_bit_val)  {
-          if (this.num_consecutive[curr_bit_val] == (STUFF_TRIGGER_CNT + 1))
-              this.mark_failure("Expected a bit stuffed " + other_idx);
-          else
-              this.num_consecutive[curr_bit_val] += 1;
-        }
-      
-      } else {
-        // Account for the very 1st SOF bit, which should be DOMINANT (0)
-        this.num_consecutive[curr_bit_val] = 1;
-        this.num_consecutive[other_idx] = 0;
+        } 
       }
     }
     
@@ -632,17 +721,9 @@ class canMsgParseState {
   handle_nxt_msg_bit (bit_val)  {
 
     this.curr_hdr_bit_val = bit_val;
-    this.usr_msg_xy_stuffed += bit_val;
-    this.usr_msg_01_stuffed += bit_val;
 
-    if (this.is_stuffing_on) {
-      if (!this.is_stuff_bit (bit_val)) {
-        this.eat_non_stuffed_bit (bit_val);
-      }
-        
-    } else {
-      // Bit stuffing OFF; pass value along to be handled normally
-      this.eat_non_stuffed_bit(bit_val);
+    if (!this.is_stuff_bit (bit_val)) {
+      this.eat_non_stuffed_bit (bit_val);
     }
 
     // Save off curr->prev for bit stuffing checks
@@ -658,11 +739,11 @@ class canMsgParseState {
     this.reset_for_single_msg();
     this.curr_msg_number++;
 
-    this.usr_msg_01_stuffed = "";
     this.usr_msg_xy_stuffed = "";
+    this.usr_msg_raw = "";
     var next_char;
 
-    while (this.curr_msg_state != MSG_END_OK && this.curr_msg_state != MSG_FAILED && !this.is_failed && !this.is_end_of_stream) {
+    while (this.parsing_state != MSG_ENDED && this.usr_msg_status != INTERNAL_FAIL && !this.is_end_of_stream) {
       next_char = this.can_msg_stream[this.curr_str_idx];
 
       if (next_char == '\r' || next_char == '\n')  {
@@ -698,9 +779,10 @@ class canMsgParseState {
         this.handle_nxt_msg_bit (next_char);
         this.column++;
       
-      } else if ((next_char == '\s' || next_char == '\t') && this.usr_msg_raw.length > 0)  {
-        // Don't start adding until the actual message's SOF
-        this.usr_msg_raw += next_char;
+      } else if ((next_char == '\s' || next_char == '\t'))  {
+        if (this.usr_msg_raw.length > 0)
+          // Don't start adding until the actual message's SOF
+          this.usr_msg_raw += next_char;
         this.column++;
 
       } else  {
@@ -711,11 +793,15 @@ class canMsgParseState {
       // Marching ever forward towards completion
       this.curr_str_idx++;
 
-      if (this.curr_str_idx == this.can_msg_stream.length)
+      if (this.curr_str_idx == this.can_msg_stream.length)  {
         this.is_end_of_stream = true;
+        if ((this.usr_msg_status == INFLIGHT && this.parsing_state > GET_SOF) || this.usr_msg_status == SOFT_ERROR) {
+          this.mark_failure ("Character stream ended before message was complete", FATAL_ERROR);
+        }
+      }
     }
 
-    if (this.SOF_start_line > 0 || this.curr_msg_state == MSG_END_OK || this.curr_msg_state == MSG_FAILED)
+    if (this.SOF_start_line > 0 || this.parsing_state == MSG_ENDED || this.parsing_state == MSG_HARD_FAIL)
       // Only print out when there's an actual message. 
       msg_descr = this.can_msg_info_str();
   
@@ -756,6 +842,7 @@ class generatedCanMsg  {
   generatorCrc;
 
   constructor (msg_id, is_rtr, dlc, data) {
+    this.zero_all_fields();
     this.generatorCrc = new crcHolder(CRC_POLYNOMIAL);
     // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
     // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
@@ -777,43 +864,42 @@ class generatedCanMsg  {
       // 1 (recessive) indicates extended format 29-bit message ID
       this.IDE = 1; 
       // mmmmmmmmmmmxxxxxxxxxxxxxxxxxx
-      this.MSG_ID = (msg_id & EXT_MSG_MASK_U11) >> XID_FLD_LEN;
+      this.MSG_ID = (msg_id & EXT_MSG_MASK_U11) >>> XID_FLD_LEN;
       this.EXT_MSG_ID = (msg_id & EXT_MSG_MASK_L18);
 
     }
 
     this.generatorCrc.add_bits_to_crc (new numPair (this.MSG_ID, ID_FLD_LEN));
 
+    
     this.RTR = is_rtr ? 1 : 0;
     // Must be recessive (1) 
     this.SRR = 1;
-
-    if (this.IDE == 0)
-      // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
-      this.generatorCrc.add_bits_to_crc (new numPair (this.RTR, 1));
-
-    else
-      // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
-      this.generatorCrc.add_bits_to_crc (new numPair (this.SRR, 1));
-
-    this.generatorCrc.add_bits_to_crc (new numPair (this.IDE, 1));
 
     // Reserved bits which must be set dominant (0), but accepted as either dominant or recessive 
     this.r0 = 0;
     this.r1 = 0;
 
-    if (this.IDE == 1)  {
-      // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
-      // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+    // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+    // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+
+    if (this.IDE == 0)  {
+      // Standard: [SOF|ID|-> RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      this.generatorCrc.add_bits_to_crc (new numPair (this.RTR, 1));
+      this.generatorCrc.add_bits_to_crc (new numPair (this.IDE, 1));
+      this.generatorCrc.add_bits_to_crc (new numPair (this.r0, 1));
+
+    } else  {
+      // Extended: [SOF|ID|->SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
+      this.generatorCrc.add_bits_to_crc (new numPair (this.SRR, 1));
+      this.generatorCrc.add_bits_to_crc (new numPair (this.IDE, 1));
       this.generatorCrc.add_bits_to_crc (new numPair (this.EXT_MSG_ID, XID_FLD_LEN));
       this.generatorCrc.add_bits_to_crc (new numPair (this.RTR, 1));
       this.generatorCrc.add_bits_to_crc (new numPair (this.r1, 1));
+      this.generatorCrc.add_bits_to_crc (new numPair (this.r0, 1));
     }
-    
-    this.generatorCrc.add_bits_to_crc (new numPair (this.r0, 1));
 
-
-    if (this.RTR == 0b1)  {
+    if (this.RTR == 1)  {
       // NO DATA for a Remote Transmission Request (RTR)
       this.DLC = 0;
 
@@ -848,6 +934,23 @@ class generatedCanMsg  {
     // Must be recessive (1) 
     this.IFS = 0b111;
   }
+
+  zero_all_fields ()  {
+    this.SOF = 0;
+    this.MSG_ID = 0;
+    this.RTR = 0;
+    this.SRR = 0;
+    this.IDE = 0;
+    this.EXT_MSG_ID = 0;
+    this.r1 = 0;
+    this.r0 = 0;
+    this.DLC = 0;
+    this.DATA = 0;
+    this.CRC = 0;
+    this.ACK = 0;
+    this.EOF = 0;
+    this.IFS = 0;
+  }
 }
 
 /**************************************************************
@@ -856,22 +959,35 @@ class generatedCanMsg  {
 function bit_stuff_string (fld_data, prev_bit, seq_bit_cnt, total_stuff_cnt)  {
   var stuffed_str = "";
 
-  for (var idx = 0; idx < fld_data.length; idx++) {
-    var curr_bit = fld_data[idx];
+  // TODO:  00011111x00000y00010101100011001100010010111101111001110011111100001101110111111111111111
+  //                ------ 6
+  // Failure message = Too many sequential 0s! (line 1:15)
+  // The y is stuff too late; it should be stuffed BEFORE the current character is added!
 
-    if (curr_bit == ' ')  {
-      stuffed_str += curr_bit;
-    
-    } else if (curr_bit == '0' || curr_bit == '1')  {
-      stuffed_str += curr_bit;
-      var other_bit = curr_bit == 0 ? 1 : 0;
+  for (var idx = 0; idx < fld_data.length; idx++) {
+    var curr_char = fld_data[idx];
+    stuffed_str += curr_char;
+
+    var curr_bit = 0;
+    if (curr_char == "0" || curr_char == "1")
+      curr_bit = curr_char;
+    else if (curr_char == "x" || curr_char == "X")
+      curr_bit = 0;
+    else if (curr_char == "y" || curr_char == "Y")
+      curr_bit = 1;
+    else
+      // Probably a space or other non-data character
+      curr_bit = 2;
+
+    if (curr_bit == 0 || curr_bit == 1)  {
+      var other_bit = (curr_bit == 0) ? 1 : 0;
       
       if (prev_bit.val == curr_bit) {
         seq_bit_cnt[curr_bit] += 1;
 
         if (seq_bit_cnt[curr_bit] == STUFF_TRIGGER_CNT) {
           // Stuffed 0 -> x; stuffed 1 -> y
-          stuffed_str += (other_bit == 0) ? 'x' : 'y'
+          stuffed_str += (other_bit == 0) ? "x" : "y"
           total_stuff_cnt[other_bit] += 1;
           seq_bit_cnt[curr_bit] = 0;
           seq_bit_cnt[other_bit] = 1;
@@ -883,7 +999,7 @@ function bit_stuff_string (fld_data, prev_bit, seq_bit_cnt, total_stuff_cnt)  {
         seq_bit_cnt[curr_bit] = 1;
 
       }
-
+      // Only update this when curr_bit is [0|1]
       prev_bit.val = curr_bit;
     }
   }
@@ -990,11 +1106,6 @@ function make_can_msg_str (can_msg_data, msg_descr) {
 
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.DLC, 4, DLC_FLD_LEN), prev_bit, seq_bit_cnt, total_stuff_cnt);
   append_presentation_strings (msg_descr, "DLC", tmp_str, DLC_FLD_LEN);
-  // TODO: Add byte|nibble blanks
-  if (can_msg_data.DLC > 0) {
-    // TODO: FIX can_msg_data.DATA_str = bit_stuff_string (make_readable_bit_string (can_msg_data.DATA_str, 8, can_msg_data.DLC * 8), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    // TODO: append_presentation_strings (msg_descr, "DATA", can_msg_data.DATA_str, 4);
-  }
 
   for (var data_idx = 0; data_idx < can_msg_data.DLC; data_idx++) {
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.DATA[data_idx], 8, 8), prev_bit, seq_bit_cnt, total_stuff_cnt);
@@ -1280,7 +1391,6 @@ function on_click_decode (event) {
       var nxt_msg_summary;
 
       while (!can_msg_stream_parser.is_end_of_stream && !is_msgs_done) {
-        // TODO: Infinite looping?
         nxt_msg_summary = can_msg_stream_parser.get_next_can_msg ();
 
         if (nxt_msg_summary == null || nxt_msg_summary == "")
@@ -1289,6 +1399,84 @@ function on_click_decode (event) {
           decode_output_txtbox.value += nxt_msg_summary;
         }
       }
+    }
+  }
+}
+
+/**************************************************************
+ * Generate a stream of randomized CAN bus messages for testing
+***************************************************************/
+function on_click_test_stream (event) {
+
+  var msg_stream_txt_box = document.getElementById ("can_msg_stream_txt_box");
+
+  if (msg_stream_txt_box == null) {
+    alert ("DEVELOPER ERROR: can_msg_stream_txt_box MIA!");
+  
+  } else  {
+    // Clear whatever is currently in the msg stream text box
+    msg_stream_txt_box.value = "";
+    var coin_toss;
+    var idx;
+    var can_msg_id;
+    var is_rtr;
+    var data_length_code;
+    data_array = new Uint8Array(8);
+    var msg_descr = new presentationStr();
+    for (idx = 0; idx < 10; idx++)  {
+      coin_toss = getRandomIntInclusive (0, 1);
+
+      if (coin_toss == 0)
+        // Standard frame
+        can_msg_id = getRandomIntInclusive (0, 2047);
+      else
+        // Extended frame
+        can_msg_id = getRandomIntInclusive (2048, 536870911);
+
+      if (4 == getRandomIntInclusive (1,4)) {
+        // 1 in 4 chance of RTR msg
+        is_rtr = 1;
+        data_length_code = 0;
+      } else  {
+        // NOT an RTR; let's randomly choose a DLC
+        is_rtr = 0;
+        data_length_code = getRandomIntInclusive (1,8);
+      }
+
+      if (is_rtr == 0 && data_length_code > 0)  {
+        // data_array will be used this time
+        var adx;
+        for (adx = 0; adx < data_length_code; adx++)  {
+          // Fill in the chosen array elements
+          data_array[adx] = getRandomIntInclusive (0, 255);
+
+        }
+
+        var retry_cnt = 0;
+        var last_idx = data_length_code - 1;
+        while (data_array[last_idx] == 0 && retry_cnt < 5)  {
+          // Most significant data byte should *NOT* be zero; otherwise, DLC should be smaller
+          data_array[last_idx] = getRandomIntInclusive(1,255)
+          retry_cnt++;
+        }
+
+        for (adx = data_length_code; adx < 8; adx++)
+          // Zero out the elements that aren't active
+          data_array[adx] = 0;
+      }
+
+      msg_descr.reset();
+      can_msg_data = new generatedCanMsg (can_msg_id, is_rtr, data_length_code, data_array)
+      make_can_msg_str (can_msg_data, msg_descr);
+
+      msg_stream_txt_box.value += msg_descr.data_str.replaceAll (" ", "");
+      msg_stream_txt_box.value += "\n";
+      
+      // msg_stream_txt_box.value += msg_descr.data_str;
+      // msg_stream_txt_box.value += "\n";
+      // msg_stream_txt_box.value += msg_descr.field_guide;
+      // msg_stream_txt_box.value += "\nRand msg_id = 0x" + can_msg_id.toString(16) + "; is_rtr = " + is_rtr + "; DLC = " + data_length_code.toString(10) + ";";
+      // msg_stream_txt_box.value += "\n\n";
     }
   }
 }
@@ -1333,6 +1521,12 @@ if (decode_msg_stream_btn != null)  {
 
 } else  {
   alert ("DEVELOPER ERROR: decode_can_msg_stream_btn MIA!")
+}
+
+// This button will be used for testing only
+var make_randomized_test_stream_btn = document.getElementById ("gen_rand_stream_btn");
+if (make_randomized_test_stream_btn != null)  {
+  make_randomized_test_stream_btn.addEventListener ("click", function() {on_click_test_stream()});
 }
 
 /**************************************************************
