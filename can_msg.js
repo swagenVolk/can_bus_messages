@@ -4,6 +4,7 @@
  * Get it working with known good messages
  *  Passing vs. failing info: DATA ordering; both hex and decimal values? Value of RAW CAN msg? Take out new lines?
  * Calculate CRC
+ *  Too often it's the same value
  *  Is it being done correctly?  What about additional 0s added at end?
  *  Last bit is the CRC delimiter, which must be recessive (0)
  *  Need to bit stuff the CRC with the execption of the delimiter
@@ -44,7 +45,7 @@
 var ID_FLD_LEN = 11;
 var XID_FLD_LEN = 18;
 var DLC_FLD_LEN = 4;
-var CRC_FLD_LEN = 16;
+var CRC_FLD_LEN = 15;
 var ACK_FLD_LEN = 2;
 var EOF_FLD_LEN = 7;
 var IFS_FLD_LEN = 3;
@@ -167,7 +168,7 @@ class crcHolder {
   ***************************************************************/
   get_computed_crc_final()  {
     var idx;
-    var final_mask = 0x1;
+    var final_mask = 0x0;
 
     for (idx = 0; idx < this.poly_bit_size; idx++)  {
       // Pad with additional [0]{poly_bit_size} bits and returned computed CRC
@@ -179,8 +180,7 @@ class crcHolder {
 
     // Make sure our final computed CRC is limited by polynomial size + 1
     this.computed_crc &= final_mask;
-    // Last bit of the CRC field is the delimiter, and it must be recessive (1)
-    this.computed_crc |= 0x1;
+    // The CRC Delimiter is considered a separate field and doesn't get bit stuffed
     return this.computed_crc;
   }
 
@@ -244,11 +244,12 @@ var GET_R1 = 6;
 var GET_DLC = 7;
 var GET_DATA = 8;
 var GET_CRC = 9;
-var GET_ACK = 10;
-var GET_EOF = 11;
-var GET_IFS = 12;
-var MSG_HARD_FAIL = 13;
-var MSG_ENDED = 14;
+var GET_CRC_DELIMITER = 10;
+var GET_ACK = 11;
+var GET_EOF = 12;
+var GET_IFS = 13;
+var MSG_HARD_FAIL = 14;
+var MSG_ENDED = 15;
 
 // Values for usr_msg_status
 var SUCCESS = 0;
@@ -397,16 +398,17 @@ class canMsgParseState {
       info_str += "\nconsecutive 1 count = " + this.num_consecutive[1];
 
     } else  {
-      // Using parsed data, create a user consumable representation of the CAN bus message
-      var msg_descr = new presentationStr();
-      var can_msg_data = new generatedCanMsg (this.absolute_msg_id, this.RTR, this.data_length_code, this.data);
-      make_can_msg_str (can_msg_data, msg_descr);
+      // Using parsed data we just consumed, create a user consumable representation of the CAN bus message to
+      // use for a "disassembly" check
+      var round_trip_msg_descr = new presentationStr();
+      var round_trip_msg_data = new generatedCanMsg (this.absolute_msg_id, this.is_rtr, this.data_length_code, this.data);
+      make_can_msg_str (round_trip_msg_data, round_trip_msg_descr);
 
       // Do a round trip check....do the collected and generated representations match?
-      var generated_bit_str = msg_descr.data_str.replaceAll(" ", ""); //.replaceAll("x", "0").replaceAll("y", "1");
+      var generated_bit_str = round_trip_msg_descr.data_str.replaceAll(" ", ""); //.replaceAll("x", "0").replaceAll("y", "1");
       // generated_bit_str = generated_bit_str.replaceAll("X", "0").replaceAll("Y", "1");
 
-      var collected_bit_str = this.usr_msg_xy_stuffed; //.replaceAll(" ", "").replaceAll("x", "0").replaceAll("y", "1");
+      var collected_bit_str = this.usr_msg_xy_stuffed.replaceAll(" ", "");  //.replaceAll("x", "0").replaceAll("y", "1");
       // collected_bit_str = collected_bit_str.replaceAll("X", "0").replaceAll("Y", "1");
 
       if (generated_bit_str != collected_bit_str) {
@@ -415,8 +417,8 @@ class canMsgParseState {
         info_str += "\nGenerated: " + generated_bit_str;
 
       } else  {
-        info_str += "\n" + msg_descr.data_str;
-        info_str += "\n" + msg_descr.field_guide;
+        info_str += "\n" + round_trip_msg_descr.data_str;
+        info_str += "\n" + round_trip_msg_descr.field_guide;
         info_str += "\n\n";
       }
     }
@@ -585,11 +587,13 @@ class canMsgParseState {
         // Add bits in INCLUDING ending delimiter
         this.senders_crc |= this.curr_hdr_bit_val;
 
-        if (this.num_crc_bits == (CRC_FLD_LEN - 1))  {
+        if (this.num_crc_bits == (CRC_FLD_LEN))  {
           // The CRC Delimiter is up next and bit stuffing is turned off
           this.is_stuffing_on = false;
-        
-        } else if (this.num_crc_bits == CRC_FLD_LEN) {
+          this.parsing_state = GET_CRC_DELIMITER;
+        }
+
+      } else if (this.parsing_state == GET_CRC_DELIMITER) {
           if (this.curr_hdr_bit_val != 1) {
             this.mark_failure("Expected CRC delimiter to be RECESSIVE (1)!", SOFT_ERROR);
           } else  {
@@ -597,7 +601,6 @@ class canMsgParseState {
             if (this.senders_crc != this.calculated_crc)
               this.mark_failure ("Calculated CRC does NOT match sender's CRC! (" + make_hex_and_decimal (this.calculated_crc) + " <> " + make_hex_and_decimal (this.senders_crc) + ")", SOFT_ERROR);
           }
-        }
 
       } else if (this.parsing_state == GET_ACK) {
         this.num_ack_bits += 1;
@@ -835,13 +838,14 @@ class generatedCanMsg  {
   DLC;
   DATA;
   CRC;
+  CRC_D;
   ACK;
   EOF;
   IFS;
 
   generatorCrc;
 
-  constructor (msg_id, is_rtr, dlc, data) {
+  constructor (in_msg_id, in_rtr, in_dlc, in_data) {
     this.zero_all_fields();
     this.generatorCrc = new crcHolder(CRC_POLYNOMIAL);
     // Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
@@ -853,27 +857,27 @@ class generatedCanMsg  {
 
     var max_11bit_id = Math.pow (2, ID_FLD_LEN) - 1;
     
-    if (msg_id <= max_11bit_id) {
+    if (in_msg_id <= max_11bit_id) {
       // 0 (DOMINANT) indicates 11-bit message ID
       this.IDE = 0;
       // Message ID *MUST* be in big-endian, network order for address conflict resolution to work
-      this.MSG_ID = msg_id;
+      this.MSG_ID = in_msg_id;
       this.EXT_MSG_ID = 0;
 
     } else  {
       // 1 (recessive) indicates extended format 29-bit message ID
       this.IDE = 1; 
       // mmmmmmmmmmmxxxxxxxxxxxxxxxxxx
-      this.MSG_ID = (msg_id & EXT_MSG_MASK_U11) >>> XID_FLD_LEN;
-      this.EXT_MSG_ID = (msg_id & EXT_MSG_MASK_L18);
+      this.MSG_ID = (in_msg_id & EXT_MSG_MASK_U11) >>> XID_FLD_LEN;
+      this.EXT_MSG_ID = (in_msg_id & EXT_MSG_MASK_L18);
 
     }
 
     this.generatorCrc.add_bits_to_crc (new numPair (this.MSG_ID, ID_FLD_LEN));
 
     
-    this.RTR = is_rtr ? 1 : 0;
-    // Must be recessive (1) 
+    this.RTR = ((in_rtr == 0) ? 0 : 1);
+    // SRR is *always* recessive (1) 
     this.SRR = 1;
 
     // Reserved bits which must be set dominant (0), but accepted as either dominant or recessive 
@@ -905,24 +909,27 @@ class generatedCanMsg  {
 
     } else {
       // TODO: DLC is a 4-bit field. So is it [big|little]-endian?
-      this.DLC = dlc;
+      this.DLC = in_dlc;
 
     }
 
     this.generatorCrc.add_bits_to_crc (new numPair (this.DLC, DLC_FLD_LEN));
 
     if (this.DLC > 0) {
-      this.DATA = new Uint8Array(dlc);
+      this.DATA = new Uint8Array(in_dlc);
 
-      for (var idx = 0; idx < dlc; idx++) {
-        this.DATA[idx] = data[idx];
+      for (var idx = 0; idx < in_dlc; idx++) {
+        this.DATA[idx] = in_data[idx];
         // TODO: Endian-ness of DATA?
-        this.generatorCrc.add_bits_to_crc (new numPair (data[idx], 8));
+        this.generatorCrc.add_bits_to_crc (new numPair (in_data[idx], 8));
       }
     }
 
     // TODO: Questions remain on how this is calculated
     this.CRC = this.generatorCrc.get_computed_crc_final();
+
+    // CRC delimiter is required to be a recessive (1)
+    this.CRC_D = 1;
 
     // Transmitter sends recessive (1) and any receiver can assert a dominant (0)
     // Followed by ACK delimiter (recessive)
@@ -991,16 +998,21 @@ function bit_stuff_string (fld_data, prev_bit, seq_bit_cnt, total_stuff_cnt)  {
           total_stuff_cnt[other_bit] += 1;
           seq_bit_cnt[curr_bit] = 0;
           seq_bit_cnt[other_bit] = 1;
+          // Only update this when curr_bit is [0|1]
+          prev_bit.val = other_bit;
+  
+        } else  {
+          // Only update this when curr_bit is [0|1]
+          prev_bit.val = curr_bit;
         }
 
       } else  {
         // The bit has flipped!
         seq_bit_cnt[other_bit] = 0;
         seq_bit_cnt[curr_bit] = 1;
-
+        // Only update this when curr_bit is [0|1]
+        prev_bit.val = curr_bit;
       }
-      // Only update this when curr_bit is [0|1]
-      prev_bit.val = curr_bit;
     }
   }
 
@@ -1039,7 +1051,7 @@ function make_readable_bit_string (number, bits_per_chunk, bit_len)  {
 /**************************************************************
  * Keeps the 2 strings in this class aligned for readability
 ***************************************************************/
-function append_presentation_strings (descr, field_name, field_value, expected_fld_len) {
+function append_presentation_strings (descr, field_name, field_value) {
 
   // 0 000 0100 1010 0 0 0  0010  0000 0000 0101 0101  11  1111111  111 
   // SOF ID RTR IDE r0 DLC CRC ACK EOF IFS 
@@ -1066,60 +1078,62 @@ function make_can_msg_str (can_msg_data, msg_descr) {
   // SOF
   seq_bit_cnt[0] += 1;
   prev_bit = new passByRefNum(0);
-  append_presentation_strings (msg_descr, "SOF", "0", 1);
+  append_presentation_strings (msg_descr, "SOF", "0");
 
   // MSG_ID
   var tmp_str = "";
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.MSG_ID, ID_FLD_LEN, ID_FLD_LEN), prev_bit, seq_bit_cnt, total_stuff_cnt);
-  append_presentation_strings (msg_descr, "ID", tmp_str, ID_FLD_LEN);
+  append_presentation_strings (msg_descr, "ID", tmp_str);
 
   if (can_msg_data.IDE == 1)  {
     // Extended frame - SRR
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.SRR, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, "SRR", tmp_str, 1);
+    append_presentation_strings (msg_descr, "SRR", tmp_str);
 
   } else  {
     //   RTR
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.RTR, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, "RTR", tmp_str, 1);
+    append_presentation_strings (msg_descr, "RTR", tmp_str);
   }
   
   // IDE
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.IDE, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-  append_presentation_strings (msg_descr, "IDE", tmp_str, 1);
+  append_presentation_strings (msg_descr, "IDE", tmp_str);
   
   if (can_msg_data.IDE == 1)  {
     // Extended frame
     //   extended ID
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.EXT_MSG_ID, 4, XID_FLD_LEN), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, "EXT_ID", tmp_str, XID_FLD_LEN);
+    append_presentation_strings (msg_descr, "EXT_ID", tmp_str);
     //   RTR
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.RTR, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, "RTR", tmp_str, 1);
+    append_presentation_strings (msg_descr, "RTR", tmp_str);
     //   r1
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.r1, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, "r1", tmp_str, 1);
+    append_presentation_strings (msg_descr, "r1", tmp_str);
   }
 
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.r0, 1, 1), prev_bit, seq_bit_cnt, total_stuff_cnt);
-  append_presentation_strings (msg_descr, "r0", tmp_str, 1);
+  append_presentation_strings (msg_descr, "r0", tmp_str);
 
   tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.DLC, 4, DLC_FLD_LEN), prev_bit, seq_bit_cnt, total_stuff_cnt);
   append_presentation_strings (msg_descr, "DLC", tmp_str, DLC_FLD_LEN);
 
   for (var data_idx = 0; data_idx < can_msg_data.DLC; data_idx++) {
     tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.DATA[data_idx], 8, 8), prev_bit, seq_bit_cnt, total_stuff_cnt);
-    append_presentation_strings (msg_descr, data_idx == 0 ? "DATA" : "", tmp_str, 8);
+    append_presentation_strings (msg_descr, data_idx == 0 ? "DATA" : "", tmp_str);
   }
 
   // Bit stuffing OFF
   // TODO: CRC - TODO: Add byte|nibble blanks
-  tmp_str = make_readable_bit_string (can_msg_data.CRC, 4, 16);
-  append_presentation_strings (msg_descr, "CRC", tmp_str, 16);
+  tmp_str = bit_stuff_string (make_readable_bit_string (can_msg_data.CRC, 4, 15), prev_bit, seq_bit_cnt, total_stuff_cnt);
+  append_presentation_strings (msg_descr, "CRC", tmp_str);
+
+  append_presentation_strings (msg_descr, "CRC_D", can_msg_data.CRC_D);
   
-  append_presentation_strings (msg_descr, "ACK", make_readable_bit_string (can_msg_data.ACK, 2, 2), 2);
-  append_presentation_strings (msg_descr, "EOF", make_readable_bit_string (can_msg_data.EOF, 7, 7), 7);
-  append_presentation_strings (msg_descr, "IFS", make_readable_bit_string (can_msg_data.IFS, 3, 3), 3);
+  append_presentation_strings (msg_descr, "ACK", make_readable_bit_string (can_msg_data.ACK, 2, 2));
+  append_presentation_strings (msg_descr, "EOF", make_readable_bit_string (can_msg_data.EOF, 7, 7));
+  append_presentation_strings (msg_descr, "IFS", make_readable_bit_string (can_msg_data.IFS, 3, 3));
 
 }
 
@@ -1241,7 +1255,8 @@ function make_field_glossary (is_extended)  {
   glossary_descr += "\nr0:     RESERVED";
   glossary_descr += "\nDLC:    Data Length Code indicates length of DATA field ([0-8] bytes).";
   glossary_descr += "\nDATA:   [0-8] bytes of data.  Remote requests send no data, but their response probably will.";
-  glossary_descr += "\nCRC:    15-bit Cyclic Redundancy Check followed by 1-bit delimiter for detecting transmission errors.";
+  glossary_descr += "\nCRC:    15-bit Cyclic Redundancy Check for detecting transmission errors.";
+  glossary_descr += "\nCRC_D:  1-bit CRC delimiter; must be a recessive (1). Bit stuffing is now OFF for remainder of message.";
   glossary_descr += "\nACK:    Acknowledgment; receiver indicates error detection via DOMINANT (0) on 1st of 2 ACK bits.";
   glossary_descr += "\nEOF:    End Of Frame; 7 recessive (1) bits in a row.";
   glossary_descr += "\nIFS:    Inter Frame Space; 3 recessive (1) bits in a row.";
