@@ -1542,8 +1542,43 @@ if (decode_msg_stream_btn != null)  {
 var make_randomized_test_stream_btn = document.getElementById ("gen_rand_stream_btn");
 if (make_randomized_test_stream_btn != null)  {
   make_randomized_test_stream_btn.addEventListener ("click", function() {on_click_test_stream()});
+} else  {
+  alert ("DEVELOPER ERROR: gen_rand_stream_btn MIA!")
 }
 
 /**************************************************************
  * <END> REGISTER EVENT HANDLERS
 ***************************************************************/
+
+/**************************************************************
+ * GLOBAL SCOPE
+***************************************************************/
+var can_bus_intro_txt_box = document.getElementById ("can_bus_intro_txt_box");
+if (can_bus_intro_txt_box != null)  {
+  can_bus_intro_txt_box.value = "The Controller Area Network, or CAN bus, reduces both wire length and complexity for control systems in cars. ";
+  can_bus_intro_txt_box.value += "\nBefore CAN, cars had many point-to-point connections between user inputs and the devices that were controlled. ";
+ 
+  can_bus_intro_txt_box.value += "\nA simplified explanation of the CAN bus is that of a network wire that goes around the entirety of the car, and devices ";
+  can_bus_intro_txt_box.value += "\nconnect to this wire, and receive messages from embedded controllers that amount to commands to devices or requests ";
+  can_bus_intro_txt_box.value += "\nfor information from them.";
+  can_bus_intro_txt_box.value += "\n";
+ 
+  can_bus_intro_txt_box.value += "\nDue to its low cost, data integrity in noisy environments and ready availability of hardware transceivers and bus analyzers, ";
+  can_bus_intro_txt_box.value += "\nthe CAN bus has successfully permeated the auto industry and has expanded into industrial automation and medical equipment. ";
+  can_bus_intro_txt_box.value += "\n";
+  can_bus_intro_txt_box.value += "\nThe CAN bus transmits data serially, meaning one bit at a time, much the same as on a computer network. ";
+  can_bus_intro_txt_box.value += "\nCAN uses differential signaling with two wires to send a bit to provide clear data transmission in the electrically ";
+  can_bus_intro_txt_box.value += "\nnoisy environment of a running car. ";
+  can_bus_intro_txt_box.value += "\nA dominant logical 0 is represented by one wire with a HIGH voltage; the other with LOW voltage.";
+  can_bus_intro_txt_box.value += "\nA recessive logical 1 is represented by both wires at the same voltage. ";
+  can_bus_intro_txt_box.value += "\nDifferential signaling is cleaner than single wire data bit transmission because the two wires are compared to one another, ";
+  can_bus_intro_txt_box.value += "\ninstead of a single wire compared with a ground plane voltage, which could shift and possibly cause data corruption. ";
+  can_bus_intro_txt_box.value += "\nThe differential pair are compared to one another, so any ground plane shifting will affect both equally and not cause data corruption. ";
+
+  can_bus_intro_txt_box.value += "\nCAN uses bit stuffing to reduce the probability of data transmission errors, and cyclic redundancy checks to greatly increase ";
+  can_bus_intro_txt_box.value += "\nthe probability of catching data errors while keeping the non-data overhead in each frame to a reasonable minimum. ";
+  can_bus_intro_txt_box.value += "\n";
+  can_bus_intro_txt_box.value += "\nFor more detailed information on the CAN bus, please visit https://en.wikipedia.org/wiki/CAN_bus.";
+
+
+}

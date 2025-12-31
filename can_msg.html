@@ -18,8 +18,10 @@
 		a:visited { color: #800000; text-decoration: underline }
 	</style>
 </head>
-<body lang="en-US" link="#000080" vlink="#800000" dir="ltr"><h2 class="western">
-Create CAN 2.0[A|B] message</h2>
+<body lang="en-US" link="#000080" vlink="#800000" dir="ltr">
+<h2 class="western">What is the CAN Bus?</h2>
+<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" rows="40" cols="100" wrap="soft" style="width: 98%; height: 320px"></textarea>
+<h2 class="western">Create CAN 2.0[A|B] message</h2>
 <form name="data0_txt_box" action="../can_msg">
 	<table width="100%" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
 		<col width="246"/>
@@ -27,23 +29,21 @@ Create CAN 2.0[A|B] message</h2>
 		<tr valign="top">
 			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p align="left">Message ID [0-536870911] (Max 29 bits)</p>
 			</td>
-			<td width="300" style="border: none; padding: 0 5px 5px 5px"><p align="left"><a id="can_msg_id" name="can_msg_id"></a><a name="msg_id_txt_box"></a>
-				<input type="text" id="msg_id_txt_box" name="msg_id_txt_box"  size="38" style="width: 3.19in; height: 0.2in"></input></p>
+			<td width="300" style="border: none; padding: 0 5px 5px 5px"><p align="left"><input type="text" id="msg_id_txt_box" name="msg_id_txt_box"  size="38" style="width: 3.19in; height: 0.2in"></input></p>
 			</td>
 		</tr>
 		<tr valign="top">
-			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p align="left">Remote
-				Transition Request?</p>
+			<td width="246" style="border: none; padding: 0 5px 5px 5px">
+        <p align="left">Remote Transition Request?</p>
 			</td>
-			<td width="642" style="border: none; padding: 0 5px 5px 5px"><p align="left"><a name="is_rtr_chk_box"></a>
-				<input type="checkbox" id="is_rtr_chk_box" name="is_rtr_chk_box" value=""  style="width: 0.22in; height: 0.16in"></input></p>
+			<td width="642" style="border: none; padding: 0 5px 5px 5px">
+        <p align="left"><input type="checkbox" id="is_rtr_chk_box" name="is_rtr_chk_box" value=""  style="width: 0.22in; height: 0.16in"></input></p>
 			</td>
 		</tr>
 		<tr valign="top">
-			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p style="margin-bottom: 0.2in">
-				Data Bytes [0-255] Fill right to left</p>
-				<p align="left"><a name="clear_data_btn"></a><input type="button" id="clear_data_btn" name="clear_data_btn" value="Zero Data Bytes"  style="width: 1.2in; height: 0.28in"></input>
-								</p>
+			<td width="246" style="border: none; padding: 0 5px 5px 5px">
+        <p style="margin-bottom: 0.2in">Data Bytes [0-255] Fill right to left</p>
+				<p align="left"><input type="button" id="clear_data_btn" name="clear_data_btn" value="Zero Data Bytes"  style="width: 1.2in; height: 0.28in"></input></p>
 			</td>
 			<td width="50%" style="border: none; padding: 0 5px 5px 5px"><p align="left">
 				<textarea id="data7_txt_box" name="data7_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
