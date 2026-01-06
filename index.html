@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+	<title></title>
+	<meta name="generator" content="LibreOffice 24.2.7.2 (Linux)"/>
+	<meta name="created" content="2025-12-06T15:30:53.649501898"/>
+	<meta name="changed" content="2025-12-09T14:51:58.753373403"/>
+	<style type="text/css">
+		@page { size: 8.5in 11in; margin-left: 0.79in; margin-right: 0.39in; margin-top: 0.39in; margin-bottom: 0.39in }
+		p { line-height: 115%; margin-bottom: 0.1in; background: transparent; background: transparent }
+		h2 { margin-top: 0.14in; margin-bottom: 0.08in; background: transparent; background: transparent; page-break-after: avoid }
+		h2.western { font-family: "Liberation Serif", serif; font-size: 18pt; font-weight: bold }
+		h2.cjk { font-family: "Noto Serif CJK SC"; font-size: 18pt; font-weight: bold }
+		h2.ctl { font-family: "Noto Sans Devanagari"; font-size: 18pt; font-weight: bold }
+		td p { orphans: 0; widows: 0; background: transparent; background: transparent }
+		textarea { font-family: "Liberation Serif", serif; font-size: 13pt; font-weight: normal }
+    hr { width: 100%; height:2px; border-width:0; color:gray; background-color:gray; margin-top: 1.5em; margin-bottom:1.5em;}
+		a:link { color: #000080; text-decoration: underline }
+		a:visited { color: #800000; text-decoration: underline }
+	</style>
+</head>
+<body lang="en-US" link="#000080" vlink="#800000" dir="ltr">
+<h2 class="western">What is the CAN Bus?</h2>
+<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" readonly rows="40" cols="100" wrap="soft" style="width: 98%; height: 385px"></textarea>
+<p align="left">For more detailed information on the CAN bus, please visit <a href="https://en.wikipedia.org/wiki/CAN_bus">Wikipedia's CAN bus page.</a></p>
+<hr>
+<h2 class="western">Create a CAN 2.0[A|B] message</h2>
+<p align="left">Raw CAN message will show data frame fields and stuff bits</p>
+<form name="data0_txt_box" action="../can_msg">
+	<table width="100%" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
+		<col width="246"/>
+		<col width="100%"/>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0 5px 5px 5px"><p align="left">Message ID [0-536870911] (Max 29 bits)</p>
+			</td>
+			<td width="300" style="border: none; padding: 0 5px 5px 5px"><p align="left"><input type="text" id="msg_id_txt_box" name="msg_id_txt_box"  size="38" style="width: 3.19in; height: 0.2in"></input></p>
+			</td>
+		</tr>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0 5px 5px 5px">
+        <p align="left">Remote Transition Request?</p>
+			</td>
+			<td width="642" style="border: none; padding: 0 5px 5px 5px">
+        <p align="left"><input type="checkbox" id="is_rtr_chk_box" name="is_rtr_chk_box" value=""  style="width: 0.22in; height: 0.16in"></input></p>
+			</td>
+		</tr>
+		<tr valign="top">
+			<td width="246" style="border: none; padding: 0 5px 5px 5px">
+        <p style="margin-bottom: 0.2in">Data Bytes [0-255] Fill right to left</p>
+				<p align="left"><input type="button" id="clear_data_btn" name="clear_data_btn" value="Zero Data Bytes"  style="width: 1.2in; height: 0.28in"></input></p>
+			</td>
+			<td width="50%" style="border: none; padding: 0 5px 5px 5px"><p align="left">
+				<textarea id="data7_txt_box" name="data7_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data6_txt_box" name="data6_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data5_txt_box" name="data5_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data4_txt_box" name="data4_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data3_txt_box" name="data3_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data2_txt_box" name="data2_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data1_txt_box" name="data1_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        <textarea id="data0_txt_box" name="data0_txt_box"  rows="1" cols="4" wrap="soft" style="width: 0.48in; height: 0.21in"></textarea>
+        </p>
+			</td>
+		</tr>
+	</table>
+  <p align="left"><input type="button" id="gen_can_msg_btn" name="gen_can_msg_btn" value="Generate CAN Message"  style="width: 1.69in; height: 0.26in"></input>
+  </p>
+  <p align="left"><pre id="gen_can_msg_pre" name="gen_can_msg_pre" width="100%" border="solid"></pre></p>
+  <p align="left"><pre id="glossary_pre" name="glossary_pre" width="100%" border="solid"></pre></p>
+  <hr>
+  <h2 class="western">Decode CAN messages</h2>
+  <p align="left"><label for="can_msg_stream_lbl">Place a stream of CAN bus messages below for decode OR </label>
+    <input type="button" id="gen_rand_stream_btn" name="gen_rand_stream_btn" value="Make randomized stream"  style="width: 1.69in; height: 0.26in; margin-left: 0.5em;"></input>
+  </p>
+  <p align="left"><textarea id="can_msg_stream_txt_box" name="can_msg_stream_txt_box"  rows="40" cols="100" wrap="soft" style="width: 98%; height: 200px"></textarea></p>
+  <p align="left"><input type="button" id="decode_can_msg_stream_btn" name="decode_can_msg_stream_btn" value="Decode CAN Messages"  style="width: 1.69in; height: 0.26in"></input>
+  <p align="left"><label for="decoded_can_msgs_lbl">Decoded CAN bus messages below</label></p>
+  <p align="left"><textarea id="decoded_stream_txt_box" name="decoded_stream_txt_box"  rows="20" cols="100" wrap="soft" style="width: 98%; height: 150px"></textarea></p>
+  <p align="left">
+</form>
+<p align="left"><br/>
+<br/>
+
+</p>
+<p align="left"><br/>
+<br/>
+
+</p>
+<p align="left"><br/>
+<br/>
+
+</p>
+<script src="./can_msg.js"></script>
+</body>
+</html>
