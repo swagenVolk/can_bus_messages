@@ -1,14 +1,12 @@
 /**************************************************************
  * GLOBAL
- * TODO: 
+ * TODO:
+ * Remove borders on "What is the CAN Bus?" textarea 
  * Get it working with known good messages
  *  Passing vs. failing info: DATA ordering; both hex and decimal values? Value of RAW CAN msg? Take out new lines?
  * Calculate CRC
  *  Too often it's the same value
  *  Is it being done correctly?  What about additional 0s added at end?
- *  Last bit is the CRC delimiter, which must be recessive (0)
- *  Need to bit stuff the CRC with the execption of the delimiter
- *  Display 15-bit CRC.  Break delimiter out?
  * Standard: [SOF|ID|RTR|IDE|r0|DLC|DATA|CRC|ACK|EOF|IFS]
  * Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
  * 
@@ -1265,7 +1263,7 @@ function make_field_glossary (is_extended)  {
   glossary_descr += "\nA bit of opposite polarity is inserted after five consecutive bits of the same polarity."
   glossary_descr += "\nIf a transmitter sends 5 [0]s in a row, it must send a [1] stuff bit (de-stuffed by receiver).";
   glossary_descr += "\nIf a transmitter sends 5 [1]s in a row, it must send a [0] stuff bit (de-stuffed by receiver).";
-  glossary_descr += "\nBit stuffing is active from SOF to 15-bit calculated CRC and off from the CRC delimiter onwards.";
+  glossary_descr += "\nBit stuffing is active from SOF to 15-bit calculated CRC and off from the CRC_D delimiter onwards.";
 
 
   return glossary_descr;
@@ -1567,18 +1565,16 @@ if (can_bus_intro_txt_box != null)  {
   can_bus_intro_txt_box.value += "\nthe CAN bus has successfully permeated the auto industry and has expanded into industrial automation and medical equipment. ";
   can_bus_intro_txt_box.value += "\n";
   can_bus_intro_txt_box.value += "\nThe CAN bus transmits data serially, meaning one bit at a time, much the same as on a computer network. ";
-  can_bus_intro_txt_box.value += "\nCAN uses differential signaling with two wires to send a bit to provide clear data transmission in the electrically ";
-  can_bus_intro_txt_box.value += "\nnoisy environment of a running car. ";
+  can_bus_intro_txt_box.value += "\nCAN uses differential signaling with two wires to send a single bit to provide clear data transmission in the ";
+  can_bus_intro_txt_box.value += "\nelectrically noisy environment of a running car. ";
   can_bus_intro_txt_box.value += "\nA dominant logical 0 is represented by one wire with a HIGH voltage; the other with LOW voltage.";
   can_bus_intro_txt_box.value += "\nA recessive logical 1 is represented by both wires at the same voltage. ";
   can_bus_intro_txt_box.value += "\nDifferential signaling is cleaner than single wire data bit transmission because the two wires are compared to one another, ";
   can_bus_intro_txt_box.value += "\ninstead of a single wire compared with a ground plane voltage, which could shift and possibly cause data corruption. ";
-  can_bus_intro_txt_box.value += "\nThe differential pair are compared to one another, so any ground plane shifting will affect both equally and not cause data corruption. ";
+  can_bus_intro_txt_box.value += "\nSince the differential pair are compared to one another, any ground plane shifting will affect both equally. ";
 
   can_bus_intro_txt_box.value += "\nCAN uses bit stuffing to reduce the probability of data transmission errors, and cyclic redundancy checks to greatly increase ";
   can_bus_intro_txt_box.value += "\nthe probability of catching data errors while keeping the non-data overhead in each frame to a reasonable minimum. ";
   can_bus_intro_txt_box.value += "\n";
-  can_bus_intro_txt_box.value += "\nFor more detailed information on the CAN bus, please visit https://en.wikipedia.org/wiki/CAN_bus.";
-
 
 }

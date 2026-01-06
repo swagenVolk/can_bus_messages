@@ -14,14 +14,19 @@
 		h2.cjk { font-family: "Noto Serif CJK SC"; font-size: 18pt; font-weight: bold }
 		h2.ctl { font-family: "Noto Sans Devanagari"; font-size: 18pt; font-weight: bold }
 		td p { orphans: 0; widows: 0; background: transparent; background: transparent }
+		textarea { font-family: "Liberation Serif", serif; font-size: 13pt; font-weight: normal }
+    hr { width: 100%; height:2px; border-width:0; color:gray; background-color:gray; margin-top: 1.5em; margin-bottom:1.5em;}
 		a:link { color: #000080; text-decoration: underline }
 		a:visited { color: #800000; text-decoration: underline }
 	</style>
 </head>
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr">
 <h2 class="western">What is the CAN Bus?</h2>
-<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" rows="40" cols="100" wrap="soft" style="width: 98%; height: 320px"></textarea>
-<h2 class="western">Create CAN 2.0[A|B] message</h2>
+<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" readonly rows="40" cols="100" wrap="soft" style="width: 98%; height: 385px"></textarea>
+<p align="left">For more detailed information on the CAN bus, please visit <a href="https://en.wikipedia.org/wiki/CAN_bus">Wikipedia's CAN bus page.</a></p>
+<hr>
+<h2 class="western">Create a CAN 2.0[A|B] message</h2>
+<p align="left">Raw CAN message will show data frame fields and stuff bits</p>
 <form name="data0_txt_box" action="../can_msg">
 	<table width="100%" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
 		<col width="246"/>
@@ -62,12 +67,16 @@
   </p>
   <p align="left"><pre id="gen_can_msg_pre" name="gen_can_msg_pre" width="100%" border="solid"></pre></p>
   <p align="left"><pre id="glossary_pre" name="glossary_pre" width="100%" border="solid"></pre></p>
-  <p align="left"><label for="can_msg_stream_lbl">Place a stream of CAN bus messages below for decode</label></p>
+  <hr>
+  <h2 class="western">Decode CAN messages</h2>
+  <p align="left"><label for="can_msg_stream_lbl">Place a stream of CAN bus messages below for decode OR </label>
+    <input type="button" id="gen_rand_stream_btn" name="gen_rand_stream_btn" value="Make randomized stream"  style="width: 1.69in; height: 0.26in; margin-left: 0.5em;"></input>
+  </p>
   <p align="left"><textarea id="can_msg_stream_txt_box" name="can_msg_stream_txt_box"  rows="40" cols="100" wrap="soft" style="width: 98%; height: 200px"></textarea></p>
   <p align="left"><input type="button" id="decode_can_msg_stream_btn" name="decode_can_msg_stream_btn" value="Decode CAN Messages"  style="width: 1.69in; height: 0.26in"></input>
   <p align="left"><label for="decoded_can_msgs_lbl">Decoded CAN bus messages below</label></p>
   <p align="left"><textarea id="decoded_stream_txt_box" name="decoded_stream_txt_box"  rows="20" cols="100" wrap="soft" style="width: 98%; height: 150px"></textarea></p>
-  <p align="left"><input type="button" id="gen_rand_stream_btn" name="gen_rand_stream_btn" value="Generate test stream"  style="width: 1.69in; height: 0.26in"></input>
+  <p align="left">
 </form>
 <p align="left"><br/>
 <br/>
