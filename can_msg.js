@@ -381,7 +381,10 @@ class canMsgParseState {
   can_msg_info_str ()  {
     var info_str = "";
 
-    info_str += "\nCAN Message #" + this.curr_msg_number;
+    if (this.curr_msg_number > 1)
+      info_str += "\n";
+
+    info_str += "CAN Message #" + this.curr_msg_number;
     info_str += "\nSOF starts at line:column " + this.SOF_start_line + ":" + this.SOF_start_col;
     info_str += "\nCAN msg: Raw, XY stuffed";
     info_str += "\n" + this.usr_msg_raw;
