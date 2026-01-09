@@ -1237,7 +1237,7 @@ function make_field_glossary (is_extended)  {
   // Extended: [SOF|ID|SRR|IDE|EXT_ID|RTR|r1|r0|DLC|DATA|CRC|ACK|EOF|IFS]
 
   glossary_descr += "\nSOF:    Start Of Frame. A DOMINANT logical 0 is driven on an idle bus; EVERYONE LISTEN! Rest of frame follows.";
-  glossary_descr += "\nID:     11-bit message ID. Lower IDs have higher priorities for simultaneous senders; others besides lowest stop transmitting";
+  glossary_descr += "\nID:     11-bit message ID. Lower IDs have higher priorities for simultaneous senders; others besides lowest stop transmitting.";
 
   var rtr_desc = "\nRTR:    Remote Transmission Request. DOMINANT (0) for data frame; recessive (1) for remote request (asking for data from another device).";
   if (!is_extended)

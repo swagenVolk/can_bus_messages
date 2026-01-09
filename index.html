@@ -29,7 +29,10 @@
 <p align="left">For more detailed information on the CAN bus, please visit <a href="https://en.wikipedia.org/wiki/CAN_bus">Wikipedia's CAN bus page.</a></p>
 <hr>
 <h2 class="western">Create a CAN 2.0[A|B] message</h2>
-<p align="left">Choose a message ID, Remote Transmission Request (read of another device) and data to send. The page will fill in the rest of the raw CAN message with data frame fields and stuff bits and display it below</p>
+<p align="left">Choose a message ID, Remote Transmission Request (read of another device) and data to send.
+<br>The rest of the raw CAN message will be filled in around your choices (data frame fields, stuff bits, CRC) and displayed below.
+<br>Suggestion: Try using small values first, like an RTR with a message ID of 1, or a message ID of 1 with a single data byte of value 2.
+</p>
 <form name="data0_txt_box" action="../can_msg">
 	<table width="100%" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
 		<col width="246"/>
