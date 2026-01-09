@@ -22,14 +22,14 @@
 </head>
 <body lang="en-US" link="#000080" vlink="#800000" dir="ltr">
 <h2 class="western">What is the CAN Bus?</h2>
-<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" readonly rows="40" cols="100" wrap="soft" style="width: 98%; height: 405px; font-family: Liberation Serif, serif; font-size: 13pt; font-weight: normal "></textarea>
+<textarea id="can_bus_intro_txt_box" name="can_bus_intro_txt_box" readonly rows="40" cols="100" wrap="soft" style="width: 98%; height: 760px; font-family: Liberation Serif, serif; font-size: 13pt; font-weight: normal "></textarea>
 <hr>
 <h2 class="western">Goals</h2>
 <textarea id="can_bus_goals_txt_box" name="can_bus_goals_txt_box" readonly rows="40" cols="100" wrap="soft" style="width: 98%; height: 460px; font-family: Liberation Serif, serif; font-size: 13pt; font-weight: normal "></textarea>
 <p align="left">For more detailed information on the CAN bus, please visit <a href="https://en.wikipedia.org/wiki/CAN_bus">Wikipedia's CAN bus page.</a></p>
 <hr>
 <h2 class="western">Create a CAN 2.0[A|B] message</h2>
-<p align="left">Raw CAN message will show data frame fields and stuff bits</p>
+<p align="left">Choose a message ID, Remote Transmission Request (read of another device) and data to send. The page will fill in the rest of the raw CAN message with data frame fields and stuff bits and display it below</p>
 <form name="data0_txt_box" action="../can_msg">
 	<table width="100%" cellpadding="0" cellspacing="0" style="page-break-inside: avoid">
 		<col width="246"/>
@@ -42,7 +42,7 @@
 		</tr>
 		<tr valign="top">
 			<td width="246" style="border: none; padding: 0 5px 5px 5px">
-        <p align="left">Remote Transition Request?</p>
+        <p align="left">Remote Transition Request (read)?</p>
 			</td>
 			<td width="642" style="border: none; padding: 0 5px 5px 5px">
         <p align="left"><input type="checkbox" id="is_rtr_chk_box" name="is_rtr_chk_box" value=""  style="width: 0.22in; height: 0.16in"></input></p>
@@ -78,7 +78,7 @@
   <p align="left"><textarea id="can_msg_stream_txt_box" name="can_msg_stream_txt_box"  rows="40" cols="100" wrap="soft" style="width: 98%; height: 200px"></textarea></p>
   <hr>
   <h2 class="western">Decoded CAN messages</h2>
-  <p align="left"><label for="decoded_can_msgs_lbl">Raw CAN bus messages above shown decoded below</label></p>
+  <p align="left"><label for="decoded_can_msgs_lbl">Raw CAN bus messages from above shown decoded below</label></p>
   <p align="left"><input type="button" id="decode_can_msg_stream_btn" name="decode_can_msg_stream_btn" value="Decode CAN Messages"  style="width: 1.69in; height: 0.26in"></input>
   <p align="left"><textarea id="decoded_stream_txt_box" name="decoded_stream_txt_box"  rows="20" cols="100" wrap="soft" style="width: 98%; height: 150px"></textarea></p>
   <p align="left">
